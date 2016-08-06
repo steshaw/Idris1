@@ -156,6 +156,8 @@ Extra-source-files:
                        libs/pruviloj/Pruviloj/Derive/*.idr
                        libs/pruviloj/Pruviloj/Internals/*.idr
 
+                       test/bin/timeout
+
                        test/TestRun.hs
                        test/TestData.hs
 
