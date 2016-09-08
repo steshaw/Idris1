@@ -210,6 +210,12 @@ data DefaultTotality = DefaultCheckingTotal    -- ^ Total
                      | DefaultCheckingCovering -- ^Total coverage, but may diverge
   deriving (Show, Eq, Generic)
 
+-- | Configuration options for interactive editing.
+data InteractiveOpts = InteractiveOpts {
+    interactiveOpts_makeWithIndent :: Int
+  , interactiveOpts_addClauseIndent :: Int
+} deriving (Show, Generic)
+
 -- | The global state used in the Idris monad
 data IState = IState {
     tt_ctxt            :: Context            -- ^ All the currently defined names and their terms
@@ -310,8 +316,8 @@ data IState = IState {
   , idris_inmodule               :: S.Set Name                -- ^ Names defined in current module
   , idris_ttstats                :: M.Map Term (Int, Term)
   , idris_fragile                :: Ctxt String               -- ^ Fragile names and explanation.
-  }
-  deriving Generic
+  , idris_interactiveOpts        :: InteractiveOpts
+  } deriving Generic
 
 -- Required for parsers library, and therefore trifecta
 instance Show IState where
@@ -392,6 +398,12 @@ data IBCWrite = IBCFix FixDecl
               | IBCConstraint FC UConstraint
   deriving (Show, Generic)
 
+initialInteractiveOpts :: InteractiveOpts
+initialInteractiveOpts = InteractiveOpts {
+    interactiveOpts_makeWithIndent = 2
+  , interactiveOpts_addClauseIndent = 2
+}
+
 -- | The initial state for the compiler
 idrisInit :: IState
 idrisInit = IState initContext S.empty []
@@ -404,7 +416,7 @@ idrisInit = IState initContext S.empty []
                    [] [] Nothing [] Nothing [] [] Nothing Nothing emptyContext Private DefaultCheckingPartial [] Nothing [] []
                    (RawOutput stdout) True defaultTheme [] (0, emptyContext) emptyContext M.empty
                    AutomaticWidth S.empty S.empty [] Nothing Nothing [] [] M.empty [] [] []
-                   emptyContext S.empty M.empty emptyContext
+                   emptyContext S.empty M.empty emptyContext initialInteractiveOpts
 
 
 -- | The monad for the main REPL - reading and processing files and
