@@ -1458,6 +1458,27 @@ process fn (PPrint fmt width t)
             ty' = normaliseC ctxt [] ty
         iPrintResult =<< renderExternal fmt width (pprintDelab ist tm)
 
+process fn GetMakeWithIndent = do
+  i <- getIState
+  let makeWithIndent = interactiveOpts_makeWithIndent $ idris_interactiveOpts i
+  iPrintResult $ show makeWithIndent ++ "\n"
+
+process fn (SetMakeWithIndent indent) = do
+  i <- getIState
+  let opts = idris_interactiveOpts i
+  let opts' = opts { interactiveOpts_makeWithIndent = indent }
+  putIState $ i { idris_interactiveOpts = opts' }
+
+process fn GetAddClauseIndent = do
+  i <- getIState
+  let addClauseIndent = interactiveOpts_addClauseIndent $ idris_interactiveOpts i
+  iPrintResult $ show addClauseIndent ++ "\n"
+
+process fn (SetAddClauseIndent indent) = do
+  i <- getIState
+  let opts = idris_interactiveOpts i
+  let opts' = opts { interactiveOpts_addClauseIndent = indent }
+  putIState $ i { idris_interactiveOpts = opts' }
 
 showTotal :: Totality -> IState -> Doc OutputAnnotation
 showTotal t@(Partial (Other ns)) i
@@ -1548,4 +1569,3 @@ replSettings :: Maybe FilePath -> Settings Idris
 replSettings hFile = setComplete replCompletion $ defaultSettings {
                        historyFile = hFile
                      }
-

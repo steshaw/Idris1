@@ -122,9 +122,19 @@ parserCommandsForHelp =
   , (["pp", "pprint"], (SeqArgs OptionArg (SeqArgs NumberArg NameArg))
     , "Pretty prints an Idris function in either LaTeX or HTML and for a specified width."
     , cmd_pprint)
+  , (["makewithindent"], NumberArg, "Set the indent for makewith",
+     cmd_withOptNat GetMakeWithIndent SetMakeWithIndent)
+  , (["makewithindent"], NoArg,     "Get the indent for makewith",
+     cmd_withOptNat GetMakeWithIndent SetMakeWithIndent)
+  , (["addclauseindent"], NumberArg, "Set the indent for addclause",
+     cmd_withOptNat GetAddClauseIndent SetAddClauseIndent)
+  , (["addclauseindent"], NoArg,     "Get the indent for addclause",
+     cmd_withOptNat GetAddClauseIndent SetAddClauseIndent)
   ]
   where optionsList = intercalate ", " $ map fst setOptions
 
+
+parserCommands :: CommandTable
 parserCommands =
   [ noArgCmd ["u", "universes"] Universes "Display universe constraints"
   , noArgCmd ["errorhandlers"] ListErrorHandlers "List registered error handlers"
@@ -242,8 +252,6 @@ exprArg cmd name = do
         return $ Right (cmd t)
     try noArg <|> try justOperator <|> properArg
 
-
-
 genArg :: String -> P.IdrisParser a -> (a -> Command)
            -> String -> P.IdrisParser (Either String Command)
 genArg argName argParser cmd name = do
@@ -340,17 +348,23 @@ cmd_execute name = do
   where
     maintm = PRef (fileFC "(repl)") [] (sNS (sUN "main") ["Main"])
 
-
 cmd_dynamic :: String -> P.IdrisParser (Either String Command)
 cmd_dynamic name = do
     let optArg = do l <- many anyChar
                     if (l /= "")
                         then return $ Right (DynamicLink l)
                         else return $ Right ListDynamic
-
     let failure = return $ Left $ "Usage is :" ++ name ++ " [<library>]"
-
     try optArg <|> failure
+
+cmd_withOptNat :: Command -> (Int -> Command) -> String -> P.IdrisParser (Either String Command)
+cmd_withOptNat cmdWith0 cmdWith1 cmdName = try optArg <|> failure
+  where
+    optArg = do optN <- Just . fromIntegral . fst <$> P.natural <|> return Nothing
+                case optN of
+                  Nothing -> return $ Right cmdWith0
+                  Just n  -> return $ Right (cmdWith1 n)
+    failure = return $ Left $ "Usage is :" ++ cmdName ++ " [<nat>]"
 
 cmd_pprint :: String -> P.IdrisParser (Either String Command)
 cmd_pprint name = do
@@ -365,8 +379,6 @@ cmd_pprint name = do
         ppFormat :: P.IdrisParser OutputFmt
         ppFormat = (discard (P.symbol "html") >> return HTMLOutput)
                <|> (discard (P.symbol "latex") >> return LaTeXOutput)
-
-
 
 cmd_compile :: String -> P.IdrisParser (Either String Command)
 cmd_compile name = do

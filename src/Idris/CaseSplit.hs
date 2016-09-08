@@ -401,8 +401,10 @@ getClause :: Int      -- ^ line number that the type is declared on
           -> Idris String
 getClause l fn un fp
     = do i <- getIState
+         let addClauseIndent = interactiveOpts_addClauseIndent $ idris_interactiveOpts i
+--         runIO . traceIO $ "addClauseIndent = " ++ show addClauseIndent
          case lookupCtxt un (idris_interfaces i) of
-              [c] -> return (mkInterfaceBodies i (interface_methods c))
+              [c] -> return (mkInterfaceBodies addClauseIndent i (interface_methods c))
               _ -> do ty_in <- getInternalApp fp l
                       let ty = case ty_in of
                                     PTyped n t -> t
@@ -435,11 +437,11 @@ getClause l fn un fp
          getNameFrom i used _ = uniqueNameFrom (mkSupply [sUN "x", sUN "y",
                                                           sUN "z"]) used
 
-         -- write method declarations, indent with 4 spaces
-         mkInterfaceBodies :: IState -> [(Name, (Bool, FnOpts, PTerm))] -> String
-         mkInterfaceBodies i ns
+         -- write method declarations, indent with `indent` spaces.
+         mkInterfaceBodies :: Int -> IState -> [(Name, (Bool, FnOpts, PTerm))] -> String
+         mkInterfaceBodies indent i ns
              = showSep "\n"
-                  (zipWith (\(n, (_, _, ty)) m -> "    " ++
+                  (zipWith (\(n, (_, _, ty)) m -> replicate indent ' ' ++
                             def (show (nsroot n)) ++ " "
                                  ++ mkApp i ty []
                                  ++ "= ?"
@@ -464,9 +466,9 @@ getProofClause l fn fp
 -- Purely syntactic - turn a pattern match clause into a with and a new
 -- match clause
 
-mkWith :: String -> Name -> String
-mkWith str n = let str' = replaceRHS str "with (_)"
-               in str' ++ "\n" ++ newpat str
+mkWith :: String -> Name -> Int -> String
+mkWith str n indent = let str' = replaceRHS str "with (_)"
+                      in str' ++ "\n" ++ newpat str
 
    where replaceRHS [] str = str
          replaceRHS ('?':'=': rest) str = str
@@ -475,8 +477,7 @@ mkWith str n = let str' = replaceRHS str "with (_)"
          replaceRHS (x : rest) str = x : replaceRHS rest str
 
          newpat ('>':patstr) = '>':newpat patstr
-         newpat patstr =
-           "  " ++
+         newpat patstr = replicate indent ' ' ++
            replaceRHS patstr "| with_pat = ?" ++ showRHSName n ++ "_rhs"
 
 -- Replace _ with names in missing clauses
