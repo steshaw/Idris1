@@ -31,7 +31,8 @@ import Idris.Core.Evaluate
 import Idris.Core.CaseTree
 
 import Control.Category
-import Prelude hiding (id, (.))
+import Prelude hiding ((<$>), id, (.))
+import Control.Applicative
 
 import Control.Monad.State
 

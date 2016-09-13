@@ -9,6 +9,8 @@ Maintainer  : The Idris Community.
 
 module IRTS.Lang where
 
+import Prelude hiding ((<$>))
+import Control.Applicative hiding (Const)
 import Control.Monad.State hiding (lift)
 
 import Idris.Core.TT
