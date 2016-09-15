@@ -26,7 +26,8 @@ import Util.DynamicLinker
 import System.IO
 import System.Directory (canonicalizePath, doesFileExist)
 
-import Prelude hiding ((<$>), Traversable, Foldable)
+import Prelude hiding ((<$>), Applicative, Traversable, Foldable)
+import Control.Applicative
 import Control.Monad.State
 
 import Data.List hiding (insert,union)
