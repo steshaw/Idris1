@@ -1,0 +1,20 @@
+#!/usr/bin/env bash
+#
+# Generates a dependency graph of the Haskell modules in `src`.
+#
+# Requires graphmod (from Hackage) and Graphviz to be installed.
+#
+
+function require {
+  program=$1
+  programDescription=$2
+  type $program >/dev/null 2>&1 || {
+    echo "This script requires ${programDescription} but it's not installed." >&2
+    exit 1
+  }
+}
+
+require graphmod "graphmod (from Hackage)"
+require dot "Graphviz (aka dot)"
+
+graphmod --quiet --prune-edges $(find src -name \*.hs) | dot -Tsvg -o idris-deps.svg

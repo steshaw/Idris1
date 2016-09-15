@@ -52,3 +52,5 @@ TAGS
 .vscode
 .idea
 
+# Other
+/idris-deps.svg
