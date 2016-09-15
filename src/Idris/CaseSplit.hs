@@ -15,8 +15,8 @@ resolve other dependencies.
 Finally, merge the generated patterns with the original, by matching.
 Always take the "more specific" argument when there is a discrepancy, i.e.
 names over '_', patterns over names, etc.
-
 -}
+
 {-# LANGUAGE PatternGuards #-}
 
 module Idris.CaseSplit(
@@ -28,11 +28,10 @@ module Idris.CaseSplit(
   ) where
 
 import Idris.AbsSyntax
-import Idris.AbsSyntaxTree (Idris, IState, PTerm)
+import Idris.AbsSyntaxTree (IState, PTerm)
 import Idris.ElabDecls
 import Idris.Delaborate
 import Idris.Parser
-import Idris.Parser.Helpers
 import Idris.Error
 import Idris.Output
 
@@ -40,21 +39,12 @@ import Idris.Elab.Value
 import Idris.Elab.Term
 
 import Idris.Core.TT
-import Idris.Core.Typecheck
 import Idris.Core.Evaluate
 
-import Data.Maybe
 import Data.Char
 import Data.List (isPrefixOf, isSuffixOf)
 import Control.Monad
 import Control.Monad.State.Strict
-
-import Text.Parser.Combinators
-import Text.Parser.Char(anyChar)
-import Text.Trifecta(Result(..), parseString)
-import Text.Trifecta.Delta
-
-import Debug.Trace
 
 -- | Given a variable to split, and a term application, return a list
 -- of variable updates, paired with a flag to say whether the given
@@ -399,19 +389,19 @@ getClause :: Int      -- ^ line number that the type is declared on
           -> Name     -- ^ User given name
           -> FilePath -- ^ Source file name
           -> Idris String
-getClause l fn un fp
+getClause l _ un fp
     = do i <- getIState
-         let addClauseIndent = interactiveOpts_addClauseIndent $ idris_interactiveOpts i
---         runIO . traceIO $ "addClauseIndent = " ++ show addClauseIndent
+         indentClause <- getIndentClause
+--         runIO . traceIO $ "indentClause = " ++ show indentClause
          case lookupCtxt un (idris_interfaces i) of
-              [c] -> return (mkInterfaceBodies addClauseIndent i (interface_methods c))
+              [c] -> return (mkInterfaceBodies indentClause i (interface_methods c))
               _ -> do ty_in <- getInternalApp fp l
                       let ty = case ty_in of
-                                    PTyped n t -> t
+                                    PTyped _ t -> t
                                     x -> x
                       ist <- get
-                      let ap = mkApp ist ty []
-                      return (showLHSName un ++ " " ++ ap ++ "= ?"
+                      let app = mkApp ist ty []
+                      return (showLHSName un ++ " " ++ app ++ "= ?"
                                       ++ showRHSName un ++ "_rhs")
    where mkApp :: IState -> PTerm -> [Name] -> String
          mkApp i (PPi (Exp _ _ False) (MN _ _) _ ty sc) used

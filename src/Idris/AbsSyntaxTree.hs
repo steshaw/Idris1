@@ -14,7 +14,6 @@ module Idris.AbsSyntaxTree where
 import Idris.Core.TT
 import Idris.Core.Evaluate
 import Idris.Core.Elaborate hiding (Tactic(..))
-import Idris.Core.Typecheck
 import Idris.Docstrings
 import IRTS.Lang
 import IRTS.CodegenCommon
@@ -23,10 +22,9 @@ import Util.DynamicLinker
 
 import Idris.Colours
 
-import System.Console.Haskeline
 import System.IO
 
-import Prelude hiding ((<$>))
+import Prelude hiding ((<$>), Traversable, Foldable)
 
 import Control.Applicative ((<|>))
 
@@ -41,19 +39,13 @@ import Data.List hiding (group)
 import Data.Char
 import qualified Data.Map.Strict as M
 import qualified Data.Text as T
-import Data.Either
 import qualified Data.Set as S
-import Data.Word (Word)
-import Data.Maybe (fromMaybe, mapMaybe, maybeToList)
+import Data.Maybe (mapMaybe, maybeToList)
 import Data.Traversable (Traversable)
 import Data.Typeable
 import Data.Foldable (Foldable)
 import GHC.Generics (Generic)
 import Network.Socket(PortNumber)
-
-import Debug.Trace
-
-import Text.PrettyPrint.Annotated.Leijen
 
 data ElabWhat = ETypes | EDefns | EAll
   deriving (Show, Eq)
@@ -118,6 +110,7 @@ data IOption = IOption {
   , opt_autoimpls    :: Bool
   } deriving (Show, Eq, Generic)
 
+defaultOpts :: IOption
 defaultOpts = IOption { opt_logLevel   = 0
                       , opt_logcats    = []
                       , opt_typecase   = False
@@ -212,8 +205,8 @@ data DefaultTotality = DefaultCheckingTotal    -- ^ Total
 
 -- | Configuration options for interactive editing.
 data InteractiveOpts = InteractiveOpts {
-    interactiveOpts_makeWithIndent :: Int
-  , interactiveOpts_addClauseIndent :: Int
+    interactiveOpts_indentWith :: Int
+  , interactiveOpts_indentClause :: Int
 } deriving (Show, Generic)
 
 -- | The global state used in the Idris monad
@@ -400,8 +393,8 @@ data IBCWrite = IBCFix FixDecl
 
 initialInteractiveOpts :: InteractiveOpts
 initialInteractiveOpts = InteractiveOpts {
-    interactiveOpts_makeWithIndent = 2
-  , interactiveOpts_addClauseIndent = 2
+    interactiveOpts_indentWith = 2
+  , interactiveOpts_indentClause = 2
 }
 
 -- | The initial state for the compiler
@@ -502,6 +495,8 @@ data Opt = Filename String
          | ColourREPL Bool
          | Idemode
          | IdemodeSocket
+         | IndentWith Int
+         | IndentClause Int
          | ShowAll
          | ShowLibs
          | ShowLibdir
@@ -2560,5 +2555,5 @@ usedNamesIn vars ist tm = nub $ ni 0 [] tm
 getErasureInfo :: IState -> Name -> [Int]
 getErasureInfo ist n =
     case lookupCtxtExact n (idris_optimisation ist) of
-        Just (Optimise inacc detagg) -> map fst inacc
+        Just (Optimise inacc _) -> map fst inacc
         Nothing -> []

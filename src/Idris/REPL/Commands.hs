@@ -74,7 +74,3 @@ data Command = Quit
              -- Debugging commands
              | DebugInfo Name
              | DebugUnify PTerm PTerm
-             | GetMakeWithIndent
-             | SetMakeWithIndent Int
-             | GetAddClauseIndent
-             | SetAddClauseIndent Int

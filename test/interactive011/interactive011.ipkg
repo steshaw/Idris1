@@ -1,0 +1,11 @@
+--
+-- Not used in the test but convenient for testing Emacs in IDE mode.
+--
+
+package interactive011
+
+opts = "--indent-clause 4 --indent-with 8"
+
+sourcedir = src
+
+modules = interactive011

@@ -30,7 +30,7 @@ import Idris.IdrisDoc
 import Idris.Prover
 import Idris.Parser hiding (indent)
 import Idris.Coverage
-import Idris.Docs hiding (Doc)
+import Idris.Docs
 import Idris.Completion
 import qualified Idris.IdeMode as IdeMode
 import Idris.Colours hiding (colourise)
@@ -106,8 +106,6 @@ import Control.DeepSeq
 import Control.Concurrent.Async (race)
 import System.FSNotify (withManager, watchDir)
 import System.FSNotify.Devel (allEvents, doAllEvents)
-
-
 
 -- | Run the REPL
 repl :: IState -- ^ The initial state
@@ -1457,28 +1455,6 @@ process fn (PPrint fmt width t)
         let ppo = ppOptionIst ist
             ty' = normaliseC ctxt [] ty
         iPrintResult =<< renderExternal fmt width (pprintDelab ist tm)
-
-process fn GetMakeWithIndent = do
-  i <- getIState
-  let makeWithIndent = interactiveOpts_makeWithIndent $ idris_interactiveOpts i
-  iPrintResult $ show makeWithIndent ++ "\n"
-
-process fn (SetMakeWithIndent indent) = do
-  i <- getIState
-  let opts = idris_interactiveOpts i
-  let opts' = opts { interactiveOpts_makeWithIndent = indent }
-  putIState $ i { idris_interactiveOpts = opts' }
-
-process fn GetAddClauseIndent = do
-  i <- getIState
-  let addClauseIndent = interactiveOpts_addClauseIndent $ idris_interactiveOpts i
-  iPrintResult $ show addClauseIndent ++ "\n"
-
-process fn (SetAddClauseIndent indent) = do
-  i <- getIState
-  let opts = idris_interactiveOpts i
-  let opts' = opts { interactiveOpts_addClauseIndent = indent }
-  putIState $ i { idris_interactiveOpts = opts' }
 
 showTotal :: Totality -> IState -> Doc OutputAnnotation
 showTotal t@(Partial (Other ns)) i

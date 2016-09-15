@@ -122,14 +122,6 @@ parserCommandsForHelp =
   , (["pp", "pprint"], (SeqArgs OptionArg (SeqArgs NumberArg NameArg))
     , "Pretty prints an Idris function in either LaTeX or HTML and for a specified width."
     , cmd_pprint)
-  , (["makewithindent"], NumberArg, "Set the indent for makewith",
-     cmd_withOptNat GetMakeWithIndent SetMakeWithIndent)
-  , (["makewithindent"], NoArg,     "Get the indent for makewith",
-     cmd_withOptNat GetMakeWithIndent SetMakeWithIndent)
-  , (["addclauseindent"], NumberArg, "Set the indent for addclause",
-     cmd_withOptNat GetAddClauseIndent SetAddClauseIndent)
-  , (["addclauseindent"], NoArg,     "Get the indent for addclause",
-     cmd_withOptNat GetAddClauseIndent SetAddClauseIndent)
   ]
   where optionsList = intercalate ", " $ map fst setOptions
 
@@ -356,15 +348,6 @@ cmd_dynamic name = do
                         else return $ Right ListDynamic
     let failure = return $ Left $ "Usage is :" ++ name ++ " [<library>]"
     try optArg <|> failure
-
-cmd_withOptNat :: Command -> (Int -> Command) -> String -> P.IdrisParser (Either String Command)
-cmd_withOptNat cmdWith0 cmdWith1 cmdName = try optArg <|> failure
-  where
-    optArg = do optN <- Just . fromIntegral . fst <$> P.natural <|> return Nothing
-                case optN of
-                  Nothing -> return $ Right cmdWith0
-                  Just n  -> return $ Right (cmdWith1 n)
-    failure = return $ Left $ "Usage is :" ++ cmdName ++ " [<nat>]"
 
 cmd_pprint :: String -> P.IdrisParser (Either String Command)
 cmd_pprint name = do
