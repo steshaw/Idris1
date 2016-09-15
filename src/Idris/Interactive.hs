@@ -30,15 +30,10 @@ import Idris.Elab.Term
 import Util.Pretty
 import Util.System
 
-import System.FilePath
 import System.Directory
 import System.IO
 import Data.Char
-import Data.Maybe (fromMaybe)
 import Data.List (isSuffixOf)
-import qualified Data.Map as M
-
-import Debug.Trace
 
 caseSplitAt :: FilePath -> Bool -> Int -> Name -> Idris ()
 caseSplitAt fn updatefile l n
@@ -182,11 +177,11 @@ makeWith :: FilePath -> Bool -> Int -> Name -> Idris ()
 makeWith fn updatefile l n = do
   src <- runIO $ readSource fn
   i <- getIState
+  indentWith <- getIndentWith
   let (before, tyline : later) = splitAt (l-1) (lines src)
   let ind = getIndent tyline
-  let makeWithIndent = interactiveOpts_makeWithIndent $ idris_interactiveOpts i
---  runIO . traceIO $ "makeWithIndent = " ++ show makeWithIndent
-  let with = mkWith tyline n makeWithIndent
+--  runIO . traceIO $ "indentWith = " ++ show indentWith
+  let with = mkWith tyline n indentWith
   -- add clause before first blank line in 'later',
   -- or (TODO) before first line with same indentation as tyline
   let (nonblank, rest) = span (\x -> not (all isSpace x) &&

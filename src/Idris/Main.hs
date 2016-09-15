@@ -52,15 +52,12 @@ import Control.Monad.Trans ( lift )
 import Data.Maybe
 import Control.DeepSeq
 
-
-
 -- | How to run Idris programs.
 runMain :: Idris () -> IO ()
 runMain prog = do res <- runExceptT $ execStateT prog idrisInit
                   case res of
                        Left err -> putStrLn $ "Uncaught error: " ++ show err
                        Right _ -> return ()
-
 
 -- | The main function of Idris that when given a set of Options will
 -- launch Idris into the desired interaction mode either: REPL;
@@ -218,13 +215,15 @@ idrisMain opts =
        ok <- noErrors
        when (not ok) $ runIO (exitWith (ExitFailure 1))
   where
-    makeOption (OLogging i)  = setLogLevel i
-    makeOption (OLogCats cs) = setLogCats cs
-    makeOption TypeCase      = setTypeCase True
-    makeOption TypeInType    = setTypeInType True
-    makeOption NoCoverage    = setCoverage False
-    makeOption ErrContext    = setErrContext True
-    makeOption _             = return ()
+    makeOption (OLogging i)     = setLogLevel i
+    makeOption (OLogCats cs)    = setLogCats cs
+    makeOption TypeCase         = setTypeCase True
+    makeOption TypeInType       = setTypeInType True
+    makeOption NoCoverage       = setCoverage False
+    makeOption ErrContext       = setErrContext True
+    makeOption (IndentWith n)   = setIndentWith n
+    makeOption (IndentClause n) = setIndentClause n
+    makeOption _                = return ()
 
     processOptimisation :: (Bool,Optimisation) -> Idris ()
     processOptimisation (True,  p) = addOptimise p
