@@ -13,8 +13,14 @@ module Idris.Docs (
   , FunDoc, FunDoc'(..), Docs, Docs'(..)
   ) where
 
-import Idris.AbsSyntax
-import Idris.AbsSyntaxTree
+import Idris.AbsSyntax (
+  PTerm(..), PDecl'(..), PArg'(..), Plicity(..), RecordInfo(..), Fixity, FixDecl(..),
+  InterfaceInfo(..),
+  HowMuchDocs(..),
+  Idris, IState(..), getIState,
+  basename,
+  PPOption(..), pprintPTerm, prettyName, prettyIst, ppOptionIst,
+  modDocName, typeDescription, type1Doc)
 import Idris.Delaborate
 import Idris.Core.TT
 import Idris.Core.Evaluate
@@ -23,8 +29,6 @@ import Idris.Docstrings (Docstring, emptyDocstring, noDocs, nullDocstring, rende
 import Util.Pretty
 
 import Prelude hiding ((<$>))
-
-import Control.Arrow (first)
 
 import Data.Maybe
 import Data.List
