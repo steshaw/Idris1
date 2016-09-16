@@ -89,8 +89,8 @@ addDyLib libs = do i <- getIState
                                       return (Left x)
     where findDyLib :: [DynamicLib] -> String -> Maybe DynamicLib
           findDyLib []         _                     = Nothing
-          findDyLib (lib:libs) l | l == lib_name lib = Just lib
-                                 | otherwise         = findDyLib libs l
+          findDyLib (lib:libs') l | l == lib_name lib = Just lib
+                                  | otherwise         = findDyLib libs' l
 
 getAutoImports :: Idris [FilePath]
 getAutoImports = do i <- getIState
@@ -99,7 +99,6 @@ getAutoImports = do i <- getIState
 addAutoImport :: FilePath -> Idris ()
 addAutoImport fp = do i <- getIState
                       let opts = idris_options i
-                      let autoimps = opt_autoImport opts
                       put (i { idris_options = opts { opt_autoImport =
                                                        fp : opt_autoImport opts } } )
 
@@ -316,10 +315,10 @@ addTyInfConstraints fc ts = do logLvl 2 $ "TI missing: " ++ show ts
               do let (fx, _) = unApply x
                  let (fy, _) = unApply y
                  case (fx, fy) of
-                      (P (TCon _ _) n _, P (TCon _ _) n' _) -> errWhen (n/=n)
+                      (P (TCon _ _) n _, P (TCon _ _) n' _) -> errWhen (n/=n) -- XXX: n' is unused. Should this be errWhen (n /= n')?
                       (P (TCon _ _) n _, Constant _) -> errWhen True
                       (Constant _, P (TCon _ _) n' _) -> errWhen True
-                      (P (DCon _ _ _) n _, P (DCon _ _ _) n' _) -> errWhen (n/=n)
+                      (P (DCon _ _ _) n _, P (DCon _ _ _) n' _) -> errWhen (n/=n) -- XXX: n' is unused. Should this be errWhen (n /= n')?
                       _ -> return ()
 
               where errWhen True
@@ -346,12 +345,6 @@ addFunctionErrorHandlers f arg hs =
                         Just (oldHandlers) -> M.insertWith S.union arg (S.fromList hs) oldHandlers
                         -- will always be one of those two, thus no extra case
     putIState $ i { idris_function_errorhandlers = newHandlers }
-
-getFunctionErrorHandlers :: Name -> Name -> Idris [Name]
-getFunctionErrorHandlers f arg = do i <- getIState
-                                    return . maybe [] S.toList $
-                                     undefined --lookup arg =<< lookupCtxtExact f (idris_function_errorhandlers i)
-
 
 -- | Trace all the names in a call graph starting at the given name
 getAllNames :: Name -> Idris [Name]
@@ -414,9 +407,9 @@ getFragile n = do
   return $ lookupCtxtExact n (idris_fragile i)
 
 push_estack :: Name -> Bool -> Idris ()
-push_estack n impl
+push_estack n implementation
     = do i <- getIState
-         putIState (i { elab_stack = (n, impl) : elab_stack i })
+         putIState (i { elab_stack = (n, implementation) : elab_stack i })
 
 pop_estack :: Idris ()
 pop_estack = do i <- getIState
