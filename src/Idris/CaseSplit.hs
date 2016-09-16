@@ -27,8 +27,15 @@ module Idris.CaseSplit(
   , getUniq, nameRoot
   ) where
 
-import Idris.AbsSyntax
-import Idris.AbsSyntaxTree (IState, PTerm)
+import Idris.AbsSyntax (
+    getIState, setAccessibility, addImplPat, logElab, getNameHints
+  , getInternalApp, matchClause, getIndentClause
+  )
+import Idris.AbsSyntaxTree (
+    Idris, IState(..), allNamesIn
+  , PTerm(..), PArg'(..), mapPT, showTmImpls
+  , Plicity(..), InterfaceInfo(..), FnOpts
+  )
 import Idris.ElabDecls
 import Idris.Delaborate
 import Idris.Parser
