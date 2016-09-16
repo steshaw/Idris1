@@ -5,8 +5,7 @@ License     : BSD3
 Maintainer  : The Idris Community.
 -}
 {-# LANGUAGE Arrows #-}
-module Idris.CmdOptions
-  (
+module Idris.CmdOptions (
     module Idris.CmdOptions
   , opt
   , getClient, getPkg, getPkgCheck, getPkgClean, getPkgMkDoc
