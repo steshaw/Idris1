@@ -5,9 +5,11 @@ Copyright   :
 License     : BSD3
 Maintainer  : The Idris Community.
 -}
-{-# LANGUAGE MultiParamTypeClasses, FlexibleInstances, DeriveFunctor,
-             DeriveDataTypeable, DeriveGeneric, TypeSynonymInstances,
-             PatternGuards #-}
+
+{-# LANGUAGE DeriveFunctor #-}
+{-# LANGUAGE DeriveDataTypeable #-}
+{-# LANGUAGE DeriveGeneric #-}
+{-# LANGUAGE PatternGuards #-}
 
 module Idris.AbsSyntaxTree where
 
@@ -150,6 +152,7 @@ data PPOption = PPOption {
 data Optimisation = PETransform -- ^ partial eval and associated transforms
   deriving (Show, Eq, Generic)
 
+defaultOptimise :: [Optimisation]
 defaultOptimise = [PETransform]
 
 -- | Pretty printing options with default verbosity.
@@ -334,6 +337,7 @@ data CGInfo = CGInfo {
 deriving instance Binary CGInfo
 !-}
 
+primDefs :: [Name]
 primDefs = [ sUN "unsafePerformPrimIO"
            , sUN "mkLazyForeignPrim"
            , sUN "mkForeignPrim"
@@ -630,19 +634,27 @@ is_scoped (Imp _ _ _ s _) = s
 is_scoped _               = Nothing
 
 -- Top level implicit
+impl              :: Plicity
 impl              = Imp [] Dynamic False (Just (Impl False True False)) False
 -- Machine generated top level implicit
+impl_gen          :: Plicity
 impl_gen          = Imp [] Dynamic False (Just (Impl False True True)) False
 
 -- Scoped implicits
+forall_imp        :: Plicity
 forall_imp        = Imp [] Dynamic False (Just (Impl False False True)) False
+forall_constraint :: Plicity
 forall_constraint = Imp [] Dynamic False (Just (Impl True False True)) False
 
+expl              :: Plicity
 expl              = Exp [] Dynamic False
+expl_param        :: Plicity
 expl_param        = Exp [] Dynamic True
 
+constraint        :: Plicity
 constraint        = Constraint [] Static
 
+tacimpl           :: PTerm -> Plicity
 tacimpl t         = TacImp [] Dynamic t
 
 data FnOpt = Inlinable -- ^ always evaluate when simplifying
@@ -1405,7 +1417,7 @@ highestFC (PAppImpl t _)          = highestFC t
 -- Interface data
 
 data InterfaceInfo = CI {
-    implementationCtorName                   :: Name
+    implementationCtorName             :: Name
   , interface_methods                  :: [(Name, (Bool, FnOpts, PTerm))] -- ^ flag whether it's a "data" method
   , interface_defaults                 :: [(Name, (Name, PDecl))]         -- ^ method name -> default impl
   , interface_default_super_interfaces :: [PDecl]
@@ -2240,7 +2252,7 @@ getExps (_ : xs)              = getExps xs
 
 getShowArgs :: [PArg] -> [PArg]
 getShowArgs [] = []
-getShowArgs (e@(PExp _ _ _ tm) : xs) = e : getShowArgs xs
+getShowArgs (e@(PExp _ _ _ _) : xs) = e : getShowArgs xs
 getShowArgs (e : xs) | AlwaysShow `elem` argopts e = e : getShowArgs xs
                      | PImp _ _ _ _ tm <- e
                      , containsHole tm = e : getShowArgs xs
