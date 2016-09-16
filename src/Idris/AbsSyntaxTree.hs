@@ -300,7 +300,7 @@ data IState = IState {
   , idris_repl_defs              :: [Name]
 
   -- | Stack of names currently being elaborated, Bool set if it's an
-  -- implementation (implementations appear twice; also as a funtion name)
+  -- implementation (implementations appear twice; also as a function name)
   , elab_stack                   :: [(Name, Bool)]
 
 
