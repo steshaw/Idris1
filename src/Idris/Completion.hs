@@ -11,8 +11,8 @@ import Idris.Core.Evaluate (definitions, ctxtAlist)
 import Idris.Core.TT
 
 import Idris.AbsSyntax (runIO)
-import Idris.AbsSyntaxTree
-import Idris.Help
+import Idris.AbsSyntaxTree (Idris, IState(..), primDefs)
+import Idris.Help (CmdArg(..), extraHelp)
 import Idris.Imports (installedPackages)
 import Idris.Colours
 import Idris.Parser.Helpers(opChars)
@@ -30,20 +30,22 @@ import qualified Data.Text as T
 import System.Console.Haskeline
 import System.Console.ANSI (Color)
 
+commands :: [String]
 commands = [ n | (names, _, _) <- allHelp ++ extraHelp, n <- names ]
 
 tacticArgs :: [(String, Maybe TacticArg)]
-tacticArgs = [ (name, args) | (names, args, _) <- Idris.Parser.Expr.tactics
-                            , name <- names ]
+tacticArgs = [ (name, args) | (names, args, _) <- Idris.Parser.Expr.tactics, name <- names ]
+
+tactics :: [String]
 tactics = map fst tacticArgs
 
 -- | Get the user-visible names from the current interpreter state.
-names :: Idris [String]
-names = do i <- get
-           let ctxt = tt_ctxt i
-           return $
-             mapMaybe nameString (allNames $ definitions ctxt) ++
-             "Type" : map fst Idris.Parser.Expr.constants
+userVisibleNames :: Idris [String]
+userVisibleNames = do i <- get
+                      let ctxt = tt_ctxt i
+                      return $
+                        mapMaybe nameString (allNames $ definitions ctxt) ++
+                        "Type" : map fst Idris.Parser.Expr.constants
   where
     -- We need both fully qualified names and identifiers that map to them
     allNames :: Ctxt a -> [Name]
@@ -64,6 +66,7 @@ metavars = do i <- get
               return . map (show . nsroot) $ map fst (filter (\(_, (_,_,_,t,_)) -> not t) (idris_metavars i)) \\ primDefs
 
 
+-- XXX: Currently unused.
 modules :: Idris [String]
 modules = do i <- get
              return $ map show $ imported i
@@ -71,11 +74,11 @@ modules = do i <- get
 namespaces :: Idris [String]
 namespaces = do
   ctxt <- fmap tt_ctxt get
-  let names = map fst $ ctxtAlist ctxt
-  return $ nub $ catMaybes $ map extractNS names
+  let names' = map fst $ ctxtAlist ctxt
+  return $ nub $ catMaybes $ map extractNS names'
   where
     extractNS :: Name -> Maybe String
-    extractNS (NS n ns) = Just $ intercalate "." . map T.unpack . reverse $ ns
+    extractNS (NS _ ns) = Just $ intercalate "." . map T.unpack . reverse $ ns
     extractNS _ = Nothing
 
 -- UpTo means if user enters full name then no other completions are shown
@@ -91,13 +94,14 @@ completeWithMode mode ns n =
           uniqueExists = [n] == prefixMatches
           fullWord = n `elem` ns
 
+completeWith :: [String] -> String -> [Completion]
 completeWith = completeWithMode Full
 
 completeName :: CompletionMode -> [String] -> CompletionFunc Idris
-completeName mode extra = completeWord Nothing (" \t(){}:" ++ completionWhitespace) completeName
+completeName mode extra = completeWord Nothing (" \t(){}:" ++ completionWhitespace) completions
   where
-    completeName n = do
-      ns <- names
+    completions n = do
+      ns <- userVisibleNames
       return $ completeWithMode mode (extra ++ ns) n
     -- The '.' needs not to be taken into consideration because it serves as namespace separator
     completionWhitespace = opChars \\ "."
@@ -124,10 +128,10 @@ isWhitespace :: Char -> Bool
 isWhitespace = (flip elem) " \t\n"
 
 lookupInHelp :: String -> Maybe CmdArg
-lookupInHelp cmd = lookupInHelp' cmd allHelp
+lookupInHelp command = lookupInHelp' command allHelp
     where lookupInHelp' cmd ((cmds, arg, _):xs) | elem cmd cmds = Just arg
-                                                | otherwise   = lookupInHelp' cmd xs
-          lookupInHelp' cmd [] = Nothing
+                                                | otherwise     = lookupInHelp' cmd xs
+          lookupInHelp' _   []                                  = Nothing
 
 completeColour :: CompletionFunc Idris
 completeColour (prev, next) = case words (reverse prev) of
@@ -139,7 +143,7 @@ completeColour (prev, next) = case words (reverse prev) of
                                        | otherwise -> let cmpls = completeWith (opts ++ colourTypes) o in
                                                       let sofar = (c ++ " ") in
                                                       return (reverse sofar, cmpls)
-                                cmd@(c:o:_) | isCmd c && o `elem` colourTypes ->
+                                (c:o:_) | isCmd c && o `elem` colourTypes ->
                                         completeColourFormat (prev, next)
                                 _ -> noCompletion (prev, next)
     where completeColourOpt :: String -> Idris [Completion]
@@ -174,7 +178,7 @@ completeCmd cmd (prev, next) = fromMaybe completeCmdName $ fmap completeArg $ lo
           completeArg PkgArgs = completePkg (prev, next)
           completeArg (ManyArgs a) = completeArg a
           completeArg (OptionalArg a) = completeArg a
-          completeArg (SeqArgs a b) = completeArg a
+          completeArg (SeqArgs a _) = completeArg a
           completeArg _ = noCompletion (prev, next)
           completeCmdName = return ("", completeWith commands cmd)
 
