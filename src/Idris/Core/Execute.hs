@@ -8,10 +8,11 @@ Maintainer  : The Idris Community.
 
 {-# LANGUAGE PatternGuards, ExistentialQuantification, CPP #-}
 {-# OPTIONS_GHC -fwarn-incomplete-patterns #-}
+
 module Idris.Core.Execute (execute) where
 
-import Idris.AbsSyntax
-import Idris.AbsSyntaxTree
+import Idris.AbsSyntax (getIState, getContext)
+import Idris.AbsSyntaxTree (Idris, IState(..), unitCon)
 import IRTS.Lang(FDesc(..), FType(..))
 
 import Idris.Primitives(Prim(..), primitives)
@@ -27,22 +28,22 @@ import Debug.Trace
 import Util.DynamicLinker
 import Util.System
 
-import Control.Applicative hiding (Const)
+-- import Control.Applicative hiding (Const)
 import Control.Exception
 import Control.Monad.Trans
 import Control.Monad.Trans.State.Strict
 import Control.Monad.Trans.Except (ExceptT, runExceptT, throwE)
-import Control.Monad hiding (forM)
+-- import Control.Monad hiding (forM)
 import Data.Maybe
-import Data.Bits
+-- import Data.Bits
 import Data.Traversable (forM)
 import Data.Time.Clock.POSIX (getPOSIXTime)
-import qualified Data.Map as M
+-- import qualified Data.Map as M
 
 #ifdef IDRIS_FFI
 import Foreign.LibFFI
 import Foreign.C.String
-import Foreign.Marshal.Alloc (free)
+-- import Foreign.Marshal.Alloc (free)
 import Foreign.Ptr
 #endif
 
@@ -53,10 +54,6 @@ execute :: Term -> Idris Term
 execute tm = fail "libffi not supported, rebuild Idris with -f FFI"
 #else
 -- else is rest of file
-readMay :: (Read a) => String -> Maybe a
-readMay s = case reads s of
-              [(x, "")] -> Just x
-              _         -> Nothing
 
 data Lazy = Delayed ExecEnv Context Term | Forced ExecVal deriving Show
 
@@ -79,7 +76,7 @@ data ExecVal = EP NameType Name ExecVal
 instance Show ExecVal where
   show (EP _ n _)        = show n
   show (EV i)            = "!!V" ++ show i ++ "!!"
-  show (EBind n b body)  = "EBind " ++ show b ++ " <<fn>>"
+  show (EBind _ b _)     = "EBind " ++ show b ++ " <<fn>>"
   show (EApp e1 e2)      = show e1 ++ " (" ++ show e2 ++ ")"
   show (EType _)         = "Type"
   show (EUType _)        = "UType"
@@ -121,7 +118,7 @@ toTT (EThunk ctxt env tm) = do env' <- mapM toBinder env
   where toBinder (n, v) = do v' <- toTT v
                              return (n, Let Erased v')
 toTT (EHandle _) = execFail $ Msg "Can't convert handles back to TT after execution."
-toTT (EPtr ptr) = execFail $ Msg "Can't convert pointers back to TT after execution."
+toTT (EPtr _) = execFail $ Msg "Can't convert pointers back to TT after execution."
 
 unApplyV :: ExecVal -> (ExecVal, [ExecVal])
 unApplyV tm = ua [] tm
