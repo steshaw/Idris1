@@ -11,8 +11,10 @@ module Idris.DataOpts(applyOpts) where
 
 import Idris.AbsSyntax ()
 import Idris.AbsSyntaxTree (Idris)
-import Idris.Core.TT
+import Idris.Core.TT hiding (arity)
 
+import Prelude hiding ((<$>), mod)
+import Control.Applicative
 import qualified Data.Text as T
 
 class Optimisable term where
@@ -80,10 +82,10 @@ instance Optimisable (TT Name) where
     applyOpts (P _ (NS (UN fn) mod) _)
        | fn == txt "toIntegerNat" && mod == prel
          = return (App Complete (P Ref (sNS (sUN "id") ["Basics","Prelude"]) Erased) Erased)
-    applyOpts c@(P (DCon t arity uniq) n _)
+    applyOpts (P (DCon t arity uniq) n _)
         = return $ applyDataOptRT n t arity uniq []
-    applyOpts t@(App s f a)
-        | (c@(P (DCon t arity uniq) n _), args) <- unApply t
+    applyOpts tt@(App s f a)
+        | ((P (DCon t arity uniq) n _), args) <- unApply tt
             = applyDataOptRT n t arity uniq <$> mapM applyOpts args
         | otherwise = App s <$> applyOpts f <*> applyOpts a
     applyOpts (Bind n b t) = Bind n <$> applyOpts b <*> applyOpts t
@@ -92,10 +94,10 @@ instance Optimisable (TT Name) where
 
 -- | Need to saturate arguments first to ensure that optimisation happens uniformly
 applyDataOptRT :: Name -> Int -> Int -> Bool -> [Term] -> Term
-applyDataOptRT n tag arity uniq args
-    | length args == arity = doOpts n args
+applyDataOptRT nm tag arity uniq args
+    | length args == arity = doOpts nm args
     | otherwise = let extra = satArgs (arity - length args)
-                      tm = doOpts n (args ++ map (\n -> P Bound n Erased) extra)
+                      tm = doOpts nm (args ++ map (\n -> P Bound n Erased) extra)
                   in bind extra tm
   where
     satArgs n = map (\i -> sMN i "sat") [1..n]
@@ -113,4 +115,4 @@ applyDataOptRT n tag arity uniq args
         | s == txt "S" && nat == txt "Nat" && prelude == txt "Prelude"
           = App Complete (App Complete (P Ref (sUN "prim__addBigInt") Erased) k) (Constant (BI 1))
 
-    doOpts n args = mkApp (P (DCon tag arity uniq) n Erased) args
+    doOpts n args' = mkApp (P (DCon tag arity uniq) n Erased) args'
