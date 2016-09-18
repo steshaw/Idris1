@@ -11,13 +11,11 @@ module Idris.Elab.Term where
 
 import Idris.AbsSyntax
 import Idris.AbsSyntaxTree
-import Idris.DSL
 import Idris.Delaborate
 import Idris.Error
 import Idris.ProofSearch
-import Idris.Output (pshow)
 
-import Idris.Core.CaseTree (SC, SC'(STerm), findCalls, findUsedArgs)
+import Idris.Core.CaseTree (SC'(STerm), findCalls)
 import Idris.Core.Elaborate hiding (Tactic(..))
 import Idris.Core.TT
 import Idris.Core.Evaluate
@@ -31,17 +29,16 @@ import Idris.Elab.Quasiquote (extractUnquotes)
 import Idris.Elab.Utils
 import Idris.Elab.Rewrite
 import Idris.Reflection
-import qualified Util.Pretty as U
 
+import Prelude hiding ((<$>))
 import Control.Applicative ((<$>))
 import Control.Monad
 import Control.Monad.State.Strict
 import Data.Foldable (for_)
 import Data.List
 import qualified Data.Map as M
-import Data.Maybe (mapMaybe, fromMaybe, catMaybes, maybeToList)
+import Data.Maybe (mapMaybe, fromMaybe, maybeToList)
 import qualified Data.Set as S
-import qualified Data.Text as T
 
 import Debug.Trace
 

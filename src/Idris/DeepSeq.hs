@@ -5,7 +5,9 @@ Copyright   :
 License     : BSD3
 Maintainer  : The Idris Community.
 -}
+
 {-# OPTIONS_GHC -fwarn-incomplete-patterns #-}
+{-# OPTIONS_GHC -fno-warn-orphans #-}
 
 module Idris.DeepSeq(
     module Idris.DeepSeq
@@ -43,7 +45,7 @@ instance NFData CT.NumWrapper where
   rnf CT.ParenFollowing = ()
 
 instance NFData DynamicLib where
-    rnf (Lib x _) = rnf x `seq` ()
+  rnf (Lib x _) = rnf x `seq` ()
 
 instance NFData IdrisColour where
   rnf (IdrisColour _ x2 x3 x4 x5) = rnf x2 `seq` rnf x3 `seq` rnf x4 `seq` rnf x5 `seq` ()
@@ -53,8 +55,8 @@ instance NFData PortNumber where
 
 -- Handle doesn't have an NFData instance
 instance NFData OutputMode where
-  rnf (RawOutput x) = ()
-  rnf (IdeMode x y) = rnf x `seq` ()
+  rnf (RawOutput _) = ()
+  rnf (IdeMode x _) = rnf x `seq` ()
 
 instance NFData a => NFData (D.Docstring a)
 instance NFData ConsoleWidth
