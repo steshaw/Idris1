@@ -9,14 +9,11 @@ Maintainer  : The Idris Community.
 
 module Idris.DataOpts(applyOpts) where
 
-import Idris.AbsSyntax
-import Idris.AbsSyntaxTree
+import Idris.AbsSyntax ()
+import Idris.AbsSyntaxTree (Idris)
 import Idris.Core.TT
 
-import Control.Applicative
-import Data.List
-import Data.Maybe
-import Debug.Trace
+import qualified Data.Text as T
 
 class Optimisable term where
     applyOpts :: term -> Idris term
@@ -49,7 +46,7 @@ instance Optimisable Raw where
 
 -- Erase types (makes ibc smaller, and we don't need them)
 instance Optimisable (Binder (TT Name)) where
-    applyOpts (Let t v) = Let <$> return Erased <*> applyOpts v
+    applyOpts (Let _ v) = Let <$> return Erased <*> applyOpts v
     applyOpts b = return (b { binderTy = Erased })
 
 instance Optimisable (Binder Raw) where
@@ -58,6 +55,7 @@ instance Optimisable (Binder Raw) where
 
 -- Run-time: do everything
 
+prel :: [T.Text]
 prel = [txt "Nat", txt "Prelude"]
 
 instance Optimisable (TT Name) where
