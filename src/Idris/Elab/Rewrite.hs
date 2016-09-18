@@ -5,12 +5,20 @@ Copyright   :
 License     : BSD3
 Maintainer  : The Idris Community.
 -}
+
 {-# LANGUAGE PatternGuards, ViewPatterns #-}
 {-# OPTIONS_GHC -fwarn-incomplete-patterns #-}
+
 module Idris.Elab.Rewrite(elabRewrite, elabRewriteLemma) where
 
-import Idris.AbsSyntax
-import Idris.AbsSyntaxTree
+import Idris.AbsSyntax (addImplBound, getIState)
+import Idris.AbsSyntaxTree (
+    PTerm(..), PArg, PArg'(..), PDecl'(..), PClause'(..)
+  , ElabInfo(..), ElabWhat(..), ElabD
+  ,  expl, impl, forall_imp -- `Plicity`s
+  , defaultSyntax
+  ,  Idris, IState(..), pexp, mapPT
+  )
 import Idris.Delaborate
 import Idris.Error
 import Idris.Core.TT
@@ -20,9 +28,6 @@ import Idris.Docstrings
 
 import Control.Monad
 import Control.Monad.State.Strict
-import Data.List
-
-import Debug.Trace
 
 elabRewrite :: (PTerm -> ElabD ()) -> IState ->
                FC -> Maybe Name -> PTerm -> PTerm -> Maybe PTerm -> ElabD ()
@@ -90,7 +95,7 @@ elabRewrite elab ist fc substfn_in rule sc_in newg
       where
         mkP :: TT Name -> -- Left term, top level
                TT Name -> TT Name -> TT Name -> TT Name
-        mkP lt l r ty | l == ty = lt
+        mkP lt l _ ty | l == ty = lt
         mkP lt l r (App s f a)
             = let f' = if (r /= f) then mkP lt l r f else f
                   a' = if (r /= a) then mkP lt l r a else a in
@@ -105,7 +110,7 @@ elabRewrite elab ist fc substfn_in rule sc_in newg
                   mkPB b = let ty = binderTy b
                                ty' = if (r /= ty) then mkP lt l r ty else ty in
                                      b { binderTy = ty' }
-        mkP lt l r x = x
+        mkP _  _ _ x = x
 
         -- If we're rewriting a dependent type, the rewrite type the rewrite
         -- may break the indices.
@@ -140,9 +145,9 @@ findSubstFn Nothing ist lt rt
                      Msg $ "Can't rewrite heterogeneous equality on types " ++
                            show (delab ist lt) ++ " and " ++ show (delab ist rt)
 
-findSubstFn (Just substfn_in) ist lt rt
+findSubstFn (Just substfn_in) ist _ _
     = case lookupTyName substfn_in (tt_ctxt ist) of
-           [(n, t)] -> return n
+           [(n, _)] -> return n
            [] -> lift . tfail . NoSuchVariable $ substfn_in
            more -> lift . tfail . CantResolveAlts $ map fst more
 
@@ -157,14 +162,15 @@ data ParamInfo = Index
 
 getParamInfo :: Type -> [PArg] -> Int -> [Int] -> [ParamInfo]
 -- Skip the top level implicits, we just need the explicit ones
-getParamInfo (Bind n (Pi _ _ _) sc) (PExp{} : is) i ps
+getParamInfo (Bind _ (Pi _ _ _) sc) (PExp{} : is) i ps
     | i `elem` ps = Param : getParamInfo sc is (i + 1) ps
     | otherwise = Index : getParamInfo sc is (i + 1) ps
-getParamInfo (Bind n (Pi _ _ _) sc) (_ : is) i ps
+getParamInfo (Bind _ (Pi _ _ _) sc) (_ : is) i ps
     | i `elem` ps = ImplicitParam : getParamInfo sc is (i + 1) ps
     | otherwise = ImplicitIndex : getParamInfo sc is (i + 1) ps
 getParamInfo _ _ _ _ = []
 
+isParam :: ParamInfo -> Bool
 isParam Index = False
 isParam Param = True
 isParam ImplicitIndex = False

@@ -636,6 +636,7 @@ is_scoped _               = Nothing
 -- Top level implicit
 impl              :: Plicity
 impl              = Imp [] Dynamic False (Just (Impl False True False)) False
+
 -- Machine generated top level implicit
 impl_gen          :: Plicity
 impl_gen          = Imp [] Dynamic False (Just (Impl False True True)) False
@@ -1596,6 +1597,7 @@ data SyntaxInfo = Syn {
 deriving instance Binary SyntaxInfo
 !-}
 
+defaultSyntax :: SyntaxInfo
 defaultSyntax = Syn [] [] [] [] [] id False False False Nothing 0 initDSL 0 True True
 
 expandNS :: SyntaxInfo -> Name -> Name
