@@ -22,18 +22,21 @@ TT is the core language of Idris. The language has:
    * We have a simple collection of tactics which we use to elaborate source
      programs with implicit syntax into fully explicit terms.
 -}
-{-# LANGUAGE MultiParamTypeClasses, FunctionalDependencies, DeriveFunctor,
-             DeriveDataTypeable, DeriveGeneric, PatternGuards #-}
+
+{-# LANGUAGE DeriveFunctor #-}
+{-# LANGUAGE DeriveDataTypeable #-}
+{-# LANGUAGE DeriveGeneric #-}
 {-# OPTIONS_GHC -fwarn-incomplete-patterns #-}
+
 module Idris.Core.TT(
-    AppStatus(..), ArithTy(..), Binder(..), Const(..), Ctxt(..)
-  , ConstraintFC(..), DataOpt(..), DataOpts(..), Datatype(..)
-  , Env(..), EnvTT(..), Err(..), Err'(..), ErrorReportPart(..)
+    AppStatus(..), ArithTy(..), Binder(..), Const(..), Ctxt
+  , ConstraintFC(..), DataOpt(..), DataOpts, Datatype(..)
+  , Env, EnvTT, Err, Err'(..), ErrorReportPart(..)
   , FC(..), FC'(..), ImplicitInfo(..), IntTy(..), Name(..)
   , NameOutput(..), NameType(..), NativeTy(..), OutputAnnotation(..)
-  , Provenance(..), Raw(..), SpecialName(..), TC(..), Term(..)
-  , TermSize(..), TextFormatting(..), TT(..),Type(..), TypeInfo(..)
-  , UConstraint(..), UCs(..), UExp(..), Universe(..)
+  , Provenance(..), Raw(..), SpecialName(..), TC(..), Term
+  , TermSize(..), TextFormatting(..), TT(..), Type, TypeInfo(..)
+  , UConstraint(..), UCs, UExp(..), Universe(..)
   , addAlist, addBinder, addDef, allTTNames, arity, bindAll
   , bindingOf, bindTyArgs, caseName, constDocs, constIsType, deleteDefExact
   , discard, emptyContext, emptyFC, explicitNames, fc_end, fc_fname
@@ -61,12 +64,10 @@ import Control.Applicative (Applicative (..), Alternative)
 import qualified Control.Applicative as A (Alternative (..))
 import Control.DeepSeq (($!!))
 import Control.Monad.State.Strict
-import Control.Monad.Trans.Except (Except (..))
 import Debug.Trace
 import qualified Data.Map.Strict as Map
 import Data.Char
 import Data.Data (Data)
-import Data.Monoid (mconcat)
 import Numeric (showIntAtBase)
 import qualified Data.Text as T
 import Data.List hiding (group, insert)
@@ -75,16 +76,13 @@ import Data.Maybe (listToMaybe)
 import Data.Foldable (Foldable)
 import Data.Traversable (Traversable)
 import Data.Typeable (Typeable)
-import Data.Vector.Unboxed (Vector)
-import qualified Data.Vector.Unboxed as V
-import qualified Data.Binary as B
 import Data.Binary hiding (get, put)
 import Foreign.Storable (sizeOf)
 import GHC.Generics (Generic)
 
 import Numeric.IEEE (IEEE (identicalIEEE))
 
-import Util.Pretty hiding (Str)
+import Util.Pretty
 
 data Option = TTypeInTType
             | CheckConv
@@ -111,14 +109,14 @@ fc_fname (FileFC f) = f
 fc_start :: FC -> (Int, Int)
 fc_start (FC _ start _) = start
 fc_start NoFC = (0, 0)
-fc_start (FileFC f) = (0, 0)
+fc_start (FileFC _) = (0, 0)
 
 -- TODO: find uses and destroy them, doing this case analysis at call sites
 -- | Give a notion of end location associated with an FC
 fc_end :: FC -> (Int, Int)
 fc_end (FC _ _ end) = end
 fc_end NoFC = (0, 0)
-fc_end (FileFC f) = (0, 0)
+fc_end (FileFC _) = (0, 0)
 
 -- | Get the largest span containing the two FCs
 spanFC :: FC -> FC -> FC
@@ -185,7 +183,7 @@ deriving instance Binary FC
 !-}
 
 instance Sized FC where
-  size (FC f s e) = 4 + length f
+  size (FC f _ _) = 4 + length f
   size NoFC = 1
   size (FileFC f) = length f
 
@@ -352,7 +350,7 @@ instance Sized ErrorReportPart where
 instance Sized Err where
   size (Msg msg) = length msg
   size (InternalMsg msg) = length msg
-  size (CantUnify _ left right err _ score) = size (fst left) + size (fst right) + size err
+  size (CantUnify _ left right err _ _) = size (fst left) + size (fst right) + size err
   size (InfiniteUnify _ right _) = size right
   size (CantConvert left right _) = size left + size right
   size (UnifyScope _ _ right _) = size right
@@ -387,13 +385,13 @@ instance Show Err where
     show (LoadingFailed fn e) = "Loading " ++ fn ++ " failed: (TT) " ++ show e
     show ProgramLineComment = "Program line next to comment"
     show (At f e) = show f ++ ":" ++ show e
-    show (ElaboratingArg f x prev e) = "Elaborating " ++ show f ++ " arg " ++
+    show (ElaboratingArg f x _ e) = "Elaborating " ++ show f ++ " arg " ++
                                        show x ++ ": " ++ show e
     show (Elaborating what n ty e) = "Elaborating " ++ what ++ show n ++
                                      showType ty ++ ":" ++ show e
         where
           showType Nothing = ""
-          showType (Just ty) = " with expected type " ++ show ty
+          showType (Just ty') = " with expected type " ++ show ty'
     show (ProofSearchFail e) = "Proof search fail: " ++ show e
     show (InfiniteUnify _ _ _) = "InfiniteUnify"
     show (UnifyScope _ _ _ _) = "UnifyScope"
@@ -428,28 +426,32 @@ instance (Pretty a OutputAnnotation) => Pretty (TC a) OutputAnnotation where
 
 instance Show a => Show (TC a) where
     show (OK x) = show x
-    show (Error str) = "Error: " ++ show str
+    show (Error err) = "Error: " ++ show err
 
 tfail :: Err -> TC a
 tfail e = Error e
 
-failMsg :: String -> TC a
-failMsg str = Error (Msg str)
+-- XXX: Unused.
+-- failMsg :: String -> TC a
+-- failMsg s = Error (Msg s)
 
-trun :: FC -> TC a -> TC a
-trun fc (OK a)    = OK a
-trun fc (Error e) = Error (At fc e)
+-- XXX: Unused.
+-- trun :: FC -> TC a -> TC a
+-- trun _  (OK a)    = OK a
+-- trun fc (Error e) = Error (At fc e)
 
 discard :: Monad m => m a -> m ()
 discard f = f >> return ()
 
 showSep :: String -> [String] -> String
-showSep sep [] = ""
-showSep sep [x] = x
-showSep sep (x:xs) = x ++ sep ++ showSep sep xs
+showSep _    [] = ""
+showSep _    [x] = x
+showSep sep' (x:xs) = x ++ sep' ++ showSep sep' xs
 
+pmap :: (a -> b) -> (a, a) -> (b, b)
 pmap f (x, y) = (f x, f y)
 
+traceWhen :: Bool -> String -> a -> a
 traceWhen True msg a = trace msg a
 traceWhen False _  a = a
 
@@ -512,18 +514,18 @@ deriving instance Binary SpecialName
 sImplementationN :: Name -> [String] -> SpecialName
 sImplementationN n ss = ImplementationN n (map T.pack ss)
 
-sParentN :: Name -> String -> SpecialName
-sParentN n s = ParentN n (T.pack s)
+-- sParentN :: Name -> String -> SpecialName
+-- sParentN n s = ParentN n (T.pack s)
 
 instance Sized Name where
-  size (UN n)     = 1
-  size (NS n els) = 1 + length els
-  size (MN i n) = 1
+  size (UN _)     = 1
+  size (NS _ els) = 1 + length els
+  size (MN _ _) = 1
   size _ = 1
 
 instance Pretty Name OutputAnnotation where
   pretty n@(UN n') = annotate (AnnName n Nothing Nothing Nothing) $ text (T.unpack n')
-  pretty n@(NS un s) = annotate (AnnName n Nothing Nothing Nothing) . noAnnotate $ pretty un
+  pretty n@(NS un _) = annotate (AnnName n Nothing Nothing Nothing) . noAnnotate $ pretty un
   pretty n@(MN i s) = annotate (AnnName n Nothing Nothing Nothing) $
                       lbrace <+> text (T.unpack s) <+> (text . show $ i) <+> rbrace
   pretty n@(SN s) = annotate (AnnName n Nothing Nothing Nothing) $ text (show s)
@@ -542,8 +544,8 @@ instance Show Name where
     show (SymRef i) = "##symbol" ++ show i ++ "##"
 
 instance Show SpecialName where
-    show (WhereN i p c) = show p ++ ", " ++ show c
-    show (WithN i n) = "with block in " ++ show n
+    show (WhereN _ p c) = show p ++ ", " ++ show c
+    show (WithN _ n) = "with block in " ++ show n
     show (ImplementationN cl impl) = showSep ", " (map T.unpack impl) ++ " implementation of " ++ show cl
     show (MethodN m) = "method " ++ show m
     show (ParentN p c) = show p ++ "#" ++ T.unpack c
@@ -571,19 +573,21 @@ showCG (SN s) = showCG' s
         showCG' (MetaN parent meta) = showCG parent ++ "_meta_" ++ showCG meta
         showFC' (FC' NoFC) = ""
         showFC' (FC' (FileFC f)) = "_" ++ cgFN f
-        showFC' (FC' (FC f s e))
-          | s == e = "_" ++ cgFN f ++
-                     "_" ++ show (fst s) ++ "_" ++ show (snd s)
+        showFC' (FC' (FC f st end))
+          | st == end = "_" ++ cgFN f ++
+                       "_" ++ show (fst st) ++ "_" ++ show (snd st)
           | otherwise = "_" ++ cgFN f ++
-                        "_" ++ show (fst s) ++ "_" ++ show (snd s) ++
-                        "_" ++ show (fst e) ++ "_" ++ show (snd e)
+                        "_" ++ show (fst st) ++ "_" ++ show (snd st) ++
+                        "_" ++ show (fst end) ++ "_" ++ show (snd end)
         cgFN = concatMap (\c -> if not (isDigit c || isLetter c) then "__" else [c])
-showCG (SymRef i) = error "can't do codegen for a symbol reference"
+showCG (SymRef _) = error "can't do codegen for a symbol reference"
 
 
 -- |Contexts allow us to map names to things. A root name maps to a collection
 -- of things in different namespaces with that name.
 type Ctxt a = Map.Map Name (Map.Map Name a)
+
+emptyContext :: Ctxt a
 emptyContext = Map.empty
 
 mapCtxt :: (a -> b) -> Ctxt a -> Ctxt b
@@ -591,19 +595,22 @@ mapCtxt = fmap . fmap
 
 -- |Return True if the argument 'Name' should be interpreted as the name of a
 -- interface.
-tcname (UN xs) = False
+tcname :: Name -> Bool
+tcname (UN _) = False
 tcname (NS n _) = tcname n
 tcname (SN (ImplementationN _ _)) = True
 tcname (SN (MethodN _)) = True
 tcname (SN (ParentN _ _)) = True
 tcname _ = False
 
-implicitable (NS n _) = False
+implicitable :: Name -> Bool
+implicitable (NS _ _) = False
 implicitable (UN xs) | T.null xs = False
                      | otherwise = isLower (T.head xs) || T.head xs == '_'
 implicitable (MN _ x) = not (tnull x) && thead x /= '_'
 implicitable _ = False
 
+nsroot :: Name -> Name
 nsroot (NS n _) = n
 nsroot n = n
 
@@ -640,9 +647,9 @@ lookupCtxtName n ctxt = case Map.lookup (nsroot n) ctxt of
         | nsmatch n found = (found, v) : filterNS xs
         | otherwise       = filterNS xs
 
-    nsmatch (NS n ns) (NS p ps) = ns `isPrefixOf` ps
+    nsmatch (NS _ ns) (NS _ ps) = ns `isPrefixOf` ps
     nsmatch (NS _ _)  _         = False
-    nsmatch looking   found     = True
+    nsmatch _         _         = True
 
 lookupCtxt :: Name -> Ctxt a -> [a]
 lookupCtxt n ctxt = map snd (lookupCtxtName n ctxt)
@@ -701,12 +708,13 @@ nativeTyWidth IT16 = 16
 nativeTyWidth IT32 = 32
 nativeTyWidth IT64 = 64
 
-{-# DEPRECATED intTyWidth "Non-total function, use nativeTyWidth and appropriate casing" #-}
-intTyWidth :: IntTy -> Int
-intTyWidth (ITFixed n) = nativeTyWidth n
-intTyWidth ITNative = 8 * sizeOf (0 :: Int)
-intTyWidth ITChar = error "IRTS.Lang.intTyWidth: Characters have platform and backend dependent width"
-intTyWidth ITBig = error "IRTS.Lang.intTyWidth: Big integers have variable width"
+-- XXX: Unused.
+-- {-# DEPRECATED intTyWidth "Non-total function, use nativeTyWidth and appropriate casing" #-}
+-- intTyWidth :: IntTy -> Int
+-- intTyWidth (ITFixed n) = nativeTyWidth n
+-- intTyWidth ITNative = 8 * sizeOf (0 :: Int)
+-- intTyWidth ITChar = error "IRTS.Lang.intTyWidth: Characters have platform and backend dependent width"
+-- intTyWidth ITBig = error "IRTS.Lang.intTyWidth: Big integers have variable width"
 
 data Const = I Int | BI Integer | Fl Double | Ch Char | Str String
            | B8 Word8 | B16 Word16 | B32 Word32 | B64 Word64
@@ -783,29 +791,29 @@ constIsType _ = True
 
 -- | Get the docstring for a Const
 constDocs :: Const -> String
-constDocs c@(AType (ATInt ITBig))          = "Arbitrary-precision integers"
-constDocs c@(AType (ATInt ITNative))       = "Fixed-precision integers of undefined size"
-constDocs c@(AType (ATInt ITChar))         = "Characters in some unspecified encoding"
-constDocs c@(AType ATFloat)                = "Double-precision floating-point numbers"
-constDocs StrType                          = "Strings in some unspecified encoding"
-constDocs c@(AType (ATInt (ITFixed IT8)))  = "Eight bits (unsigned)"
-constDocs c@(AType (ATInt (ITFixed IT16))) = "Sixteen bits (unsigned)"
-constDocs c@(AType (ATInt (ITFixed IT32))) = "Thirty-two bits (unsigned)"
-constDocs c@(AType (ATInt (ITFixed IT64))) = "Sixty-four bits (unsigned)"
-constDocs (Fl f)                           = "A float"
-constDocs (I i)                            = "A fixed-precision integer"
-constDocs (BI i)                           = "An arbitrary-precision integer"
-constDocs (Str s)                          = "A string of length " ++ show (length s)
-constDocs (Ch c)                           = "A character"
-constDocs (B8 w)                           = "The eight-bit value 0x" ++
+constDocs (AType (ATInt ITBig))          = "Arbitrary-precision integers"
+constDocs (AType (ATInt ITNative))       = "Fixed-precision integers of undefined size"
+constDocs (AType (ATInt ITChar))         = "Characters in some unspecified encoding"
+constDocs (AType ATFloat)                = "Double-precision floating-point numbers"
+constDocs StrType                        = "Strings in some unspecified encoding"
+constDocs (AType (ATInt (ITFixed IT8)))  = "Eight bits (unsigned)"
+constDocs (AType (ATInt (ITFixed IT16))) = "Sixteen bits (unsigned)"
+constDocs (AType (ATInt (ITFixed IT32))) = "Thirty-two bits (unsigned)"
+constDocs (AType (ATInt (ITFixed IT64))) = "Sixty-four bits (unsigned)"
+constDocs (Fl _)                         = "A float"
+constDocs (I _)                          = "A fixed-precision integer"
+constDocs (BI _)                         = "An arbitrary-precision integer"
+constDocs (Str s)                        = "A string of length " ++ show (length s)
+constDocs (Ch _)                         = "A character"
+constDocs (B8 w)                         = "The eight-bit value 0x" ++
                                              showIntAtBase 16 intToDigit w ""
-constDocs (B16 w)                          = "The sixteen-bit value 0x" ++
+constDocs (B16 w)                        = "The sixteen-bit value 0x" ++
                                              showIntAtBase 16 intToDigit w ""
-constDocs (B32 w)                          = "The thirty-two-bit value 0x" ++
+constDocs (B32 w)                        = "The thirty-two-bit value 0x" ++
                                              showIntAtBase 16 intToDigit w ""
-constDocs (B64 w)                          = "The sixty-four-bit value 0x" ++
+constDocs (B64 w)                        = "The sixty-four-bit value 0x" ++
                                              showIntAtBase 16 intToDigit w ""
-constDocs prim                             = "Undocumented"
+constDocs _                              = "Undocumented"
 
 data Universe = NullType | UniqueType | AllTypes
   deriving (Eq, Ord, Data, Generic, Typeable)
@@ -824,8 +832,8 @@ data Raw = Var Name
   deriving (Show, Eq, Data, Generic, Typeable)
 
 instance Sized Raw where
-  size (Var name) = 1
-  size (RBind name bind right) = 1 + size bind + size right
+  size (Var _) = 1
+  size (RBind _ bind right) = 1 + size bind + size right
   size (RApp left right) = 1 + size left + size right
   size RType = 1
   size (RUType _) = 1
@@ -923,7 +931,7 @@ raw_apply f [] = f
 raw_apply f (a : as) = raw_apply (RApp f a) as
 
 raw_unapply :: Raw -> (Raw, [Raw])
-raw_unapply t = ua [] t where
+raw_unapply raw = ua [] raw where
     ua args (RApp f a) = ua (a:args) f
     ua args t          = (t, args)
 
@@ -1020,7 +1028,7 @@ class TermSize a where
   termsize :: Name -> a -> Int
 
 instance TermSize a => TermSize [a] where
-    termsize n [] = 0
+    termsize _ [] = 0
     termsize n (x : xs) = termsize n x + termsize n xs
 
 instance TermSize (TT Name) where
@@ -1028,27 +1036,27 @@ instance TermSize (TT Name) where
        | n' == n = 1000000 -- recursive => really big
        | caseName n' = 1000000 -- case, not safe to inline for termination check
        | otherwise = 1
-    termsize n (V _) = 1
+    termsize _ (V _) = 1
     -- for `Bind` terms, we can erroneously declare a term
     -- "recursive => really big" if the name of the bound
     -- variable is the same as the name we're using
     -- So generate a different name in that case.
-    termsize n (Bind n' (Let t v) sc)
+    termsize n (Bind n' (Let _ v) sc)
        = let rn = if n == n' then sMN 0 "noname" else n in
              termsize rn v + termsize rn sc
-    termsize n (Bind n' b sc)
+    termsize n (Bind n' _ sc)
        = let rn = if n == n' then sMN 0 "noname" else n in
              termsize rn sc
     termsize n (App _ f a) = termsize n f + termsize n a
-    termsize n (Proj t i) = termsize n t
-    termsize n _ = 1
+    termsize n (Proj t _) = termsize n t
+    termsize _ _ = 1
 
 instance Sized Universe where
-  size u = 1
+  size _ = 1
 
 instance Sized a => Sized (TT a) where
   size (P name n trm) = 1 + size name + size n + size trm
-  size (V v) = 1
+  size (V _) = 1
   size (Bind nm binder bdy) = 1 + size nm + size binder + size bdy
   size (App _ l r) = 1 + size l + size r
   size (Constant c) = size c
@@ -1090,7 +1098,7 @@ deriving instance Binary TypeInfo
 !-}
 
 instance Eq n => Eq (TT n) where
-    (==) (P xt x _)     (P yt y _)     = x == y
+    (==) (P _ x _)      (P _ y _)      = x == y
     (==) (V x)          (V y)          = x == y
     (==) (Bind _ xb xs) (Bind _ yb ys) = xs == ys && xb == yb
     (==) (App _ fx ax)  (App _ fy ay)  = ax == ay && fx == fy
@@ -1107,32 +1115,33 @@ instance Eq n => Eq (TT n) where
 -- constant, the type Type, pi-binding, or an application of an injective
 -- term.
 isInjective :: TT n -> Bool
-isInjective (P (DCon _ _ _) _ _) = True
-isInjective (P (TCon _ _) _ _) = True
-isInjective (Constant _)       = True
-isInjective (TType x)          = True
-isInjective (Bind _ (Pi _ _ _) sc) = True
-isInjective (App _ f a)        = isInjective f
-isInjective _                  = False
+isInjective (P (DCon _ _ _) _ _)  = True
+isInjective (P (TCon _ _) _ _)    = True
+isInjective (Constant _)          = True
+isInjective (TType _)             = True
+isInjective (Bind _ (Pi _ _ _) _) = True
+isInjective (App _ f _)           = isInjective f
+isInjective _                     = False
 
+-- XXX: Unused
 -- | Count the number of instances of a de Bruijn index in a term
-vinstances :: Int -> TT n -> Int
-vinstances i (V x) | i == x = 1
-vinstances i (App _ f a) = vinstances i f + vinstances i a
-vinstances i (Bind x b sc) = instancesB b + vinstances (i + 1) sc
-  where instancesB (Let t v) = vinstances i v
-        instancesB _ = 0
-vinstances i t = 0
+-- vinstances :: Int -> TT n -> Int
+-- vinstances i (V x) | i == x = 1
+-- vinstances i (App _ f a) = vinstances i f + vinstances i a
+-- vinstances i (Bind x b sc) = instancesB b + vinstances (i + 1) sc
+--   where instancesB (Let t v) = vinstances i v
+--         instancesB _ = 0
+-- vinstances i t = 0
 
 -- | Replace the outermost (index 0) de Bruijn variable with the given term
 instantiate :: TT n -> TT n -> TT n
-instantiate e = subst 0 where
-    subst i (P nt x ty) = P nt x (subst i ty)
-    subst i (V x) | i == x = e
-    subst i (Bind x b sc) = Bind x (fmap (subst i) b) (subst (i+1) sc)
-    subst i (App s f a) = App s (subst i f) (subst i a)
-    subst i (Proj x idx) = Proj (subst i x) idx
-    subst i t = t
+instantiate e = sub 0 where
+    sub i (P nt x ty) = P nt x (sub i ty)
+    sub i (V x) | i == x = e
+    sub i (Bind x b sc) = Bind x (fmap (sub i) b) (sub (i+1) sc)
+    sub i (App s f a) = App s (sub i f) (sub i a)
+    sub i (Proj x idx) = Proj (sub i x) idx
+    sub _ t = t
 
 -- | As 'instantiate', but also decrement the indices of all de Bruijn variables
 -- remaining in the term, so that there are no more references to the variable
@@ -1232,7 +1241,7 @@ subst n v tm = fst $ subst' 0 tm
     -- Feel free to tidy up, as long as it still saves allocating when no
     -- substitution happens...)
     subst' i (V x) | i == x = (v, True)
-    subst' i (P _ x _) | n == x = (v, True)
+    subst' _ (P _ x _) | n == x = (v, True)
     subst' i t@(P nt x ty)
          = let (ty', ut) = subst' i ty in
                if ut then (P nt x ty', True) else (t, False)
@@ -1245,7 +1254,7 @@ subst n v tm = fst $ subst' 0 tm
                                  if uf || ua then (App s f' a', True) else (t, False)
     subst' i t@(Proj x idx) = let (x', u) = subst' i x in
                                   if u then (Proj x' idx, u) else (t, False)
-    subst' i t = (t, False)
+    subst' _ t = (t, False)
 
     substB' i b@(Let t v) = let (t', ut) = subst' i t
                                 (v', uv) = subst' i v in
@@ -1264,12 +1273,12 @@ psubst n v tm = s' 0 tm where
    s' i (V x) | x > i = V (x - 1)
               | x == i = v
               | otherwise = V x
-   s' i (P _ x _) | n == x = v
+   s' _ (P _ x _) | n == x = v
    s' i (Bind x b sc) | n == x = Bind x (fmap (s' i) b) sc
                       | otherwise = Bind x (fmap (s' i) b) (s' (i+1) sc)
    s' i (App st f a) = App st (s' i f) (s' i a)
    s' i (Proj t idx) = Proj (s' i t) idx
-   s' i t = t
+   s' _ t = t
 
 -- | As 'subst', but takes a list of (name, substitution) pairs instead
 -- of a single name and substitution
@@ -1289,13 +1298,13 @@ substTerm old new = st where
   st (Bind x b sc) = Bind x (fmap st b) (st sc)
   st t = t
 
-  eqAlpha as (P _ x _) (P _ y _) 
+  eqAlpha as (P _ x _) (P _ y _)
        = x == y || (x, y) `elem` as || (y, x) `elem` as
-  eqAlpha as (V x) (V y) = x == y
+  eqAlpha _  (V x) (V y) = x == y
   eqAlpha as (Bind x xb xs) (Bind y yb ys)
        = eqAlphaB as xb yb && eqAlpha ((x, y) : as) xs ys
   eqAlpha as (App _ fx ax) (App _ fy ay) = eqAlpha as fx fy && eqAlpha as ax ay
-  eqAlpha as x y = x == y
+  eqAlpha _  x y = x == y
 
   eqAlphaB as (Let xt xv) (Let yt yv)
        = eqAlpha as xt yt && eqAlpha as xv yv
@@ -1308,28 +1317,28 @@ occurrences :: Eq n => n -> TT n -> Int
 occurrences n t = execState (no' 0 t) 0
   where
     no' i (V x) | i == x = do num <- get; put (num + 1)
-    no' i (P Bound x _) | n == x = do num <- get; put (num + 1)
+    no' _ (P Bound x _) | n == x = do num <- get; put (num + 1)
     no' i (Bind n b sc) = do noB' i b; no' (i+1) sc
        where noB' i (Let t v) = do no' i t; no' i v
              noB' i (Guess t v) = do no' i t; no' i v
              noB' i b = no' i (binderTy b)
     no' i (App _ f a) = do no' i f; no' i a
     no' i (Proj x _) = no' i x
-    no' i _ = return ()
+    no' _ _ = return ()
 
 -- | Returns true if V 0 and bound name n do not occur in the term
 noOccurrence :: Eq n => n -> TT n -> Bool
 noOccurrence n t = no' 0 t
   where
     no' i (V x) = not (i == x)
-    no' i (P Bound x _) = not (n == x)
+    no' _ (P Bound x _) = not (n == x)
     no' i (Bind n b sc) = noB' i b && no' (i+1) sc
        where noB' i (Let t v) = no' i t && no' i v
              noB' i (Guess t v) = no' i t && no' i v
              noB' i b = no' i (binderTy b)
     no' i (App _ f a) = no' i f && no' i a
     no' i (Proj x _) = no' i x
-    no' i _ = True
+    no' _ _ = True
 
 -- | Returns all names used free in the term
 freeNames :: Eq n => TT n -> [n]
@@ -1340,12 +1349,12 @@ freeNames t = nub $ freeNames' t
                                             ++ freeNames' t
     freeNames' (Bind n b sc) = freeNames' (binderTy b) ++ (freeNames' sc \\ [n])
     freeNames' (App _ f a) = freeNames' f ++ freeNames' a
-    freeNames' (Proj x i) = freeNames' x
+    freeNames' (Proj x _) = freeNames' x
     freeNames' _ = []
 
 -- | Return the arity of a (normalised) type
 arity :: TT n -> Int
-arity (Bind n (Pi _ t _) sc) = 1 + arity sc
+arity (Bind _ (Pi _ _ _) sc) = 1 + arity sc
 arity _ = 0
 
 -- | Deconstruct an application; returns the function and a list of arguments
