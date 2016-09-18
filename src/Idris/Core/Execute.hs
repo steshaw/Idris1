@@ -28,7 +28,8 @@ import Debug.Trace
 import Util.DynamicLinker
 import Util.System
 
--- import Control.Applicative hiding (Const)
+import Prelude hiding ((<$>))
+import Control.Applicative hiding (Const)
 import Control.Exception
 import Control.Monad.Trans
 import Control.Monad.Trans.State.Strict
