@@ -5,7 +5,9 @@ Copyright   :
 License     : BSD3
 Maintainer  : The Idris Community.
 -}
-{-# LANGUAGE PatternGuards, TypeSynonymInstances, CPP #-}
+
+{-# LANGUAGE PatternGuards #-}
+{-# LANGUAGE TypeSynonymInstances #-}
 
 module IRTS.Compiler(compile, generate) where
 
@@ -16,44 +18,47 @@ import IRTS.Simplified
 import IRTS.CodegenCommon
 import IRTS.CodegenC
 import IRTS.DumpBC
-import IRTS.CodegenJavaScript
 import IRTS.Inliner
 import IRTS.Exports
 import IRTS.Portable
 
 import Idris.AbsSyntax
+  ( logCodeGen
+  , getObjectFiles, getLibs, getFlags, getHdrs, allImportDirs
+  , outputTy, getDumpCases, getDumpDefun
+  , runIO
+  , getIState
+  )
+import qualified Idris.AbsSyntax as AbsSyntax
 import Idris.AbsSyntaxTree
+  ( Codegen(..), IRFormat(..), CGInfo(..)
+  , Idris, IState(..)
+  , primDefs
+  )
 import Idris.ASTUtils
 import Idris.Erasure
 import Idris.Error
 import Idris.Output
 
-import Debug.Trace
-
 import Idris.Core.TT
 import Idris.Core.Evaluate
 import Idris.Core.CaseTree
 
-import Control.Category
-import Prelude hiding (id, (.))
+import Prelude hiding (id, (.), Applicative(..))
 
+import Control.Category
 import Control.Applicative
 import Control.Monad.State
 
-import           Data.Maybe
 import           Data.List
 import           Data.Ord
-import           Data.IntSet (IntSet)
-import qualified Data.IntSet          as IS
 import qualified Data.Map             as M
 import qualified Data.Set             as S
 
-import System.Process
+import System.Process hiding (env)
 import System.IO
 import System.Exit
 import System.Directory
-import System.Environment
-import System.FilePath ((</>), addTrailingPathSeparator)
 
 -- |  Compile to simplified forms and return CodegenInfo
 compile :: Codegen -> FilePath -> Maybe Term -> Idris CodegenInfo
@@ -111,8 +116,8 @@ compile codegen f mtm
         case dumpDefun of
             Nothing -> return ()
             Just f -> runIO $ writeFile f (dumpDefuns defuns)
-        triple <- Idris.AbsSyntax.targetTriple
-        cpu <- Idris.AbsSyntax.targetCPU
+        triple <- AbsSyntax.targetTriple
+        cpu <- AbsSyntax.targetCPU
         logCodeGen 1 "Building output"
         case checked of
             OK c -> do return $ CodegenInfo f outty triple cpu
