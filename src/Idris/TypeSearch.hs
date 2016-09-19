@@ -8,6 +8,7 @@ Maintainer  : The Idris Community.
 
 {-# OPTIONS_GHC -Wall -fwarn-tabs #-}
 {-# OPTIONS_GHC -fno-warn-unused-binds #-}
+{-# OPTIONS_GHC -fno-warn-dodgy-imports #-}
 
 module Idris.TypeSearch (
     searchByType
