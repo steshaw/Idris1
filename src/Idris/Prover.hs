@@ -29,7 +29,27 @@ import Idris.Elab.Value
 import Idris.Elab.Term
 
 import Idris.AbsSyntax
+  ( getIState, putIState, runIO
+  , getContext, setContext, initEState
+  , isetPrompt
+  , solveDeferred
+  , impShow
+  , logLvl
+  , type1Doc
+  )
 import Idris.AbsSyntaxTree
+  ( PTerm(..), PDo'(..), PTactic'(..)
+  , pexp
+  , IOption(..)
+  , EState(..), ElabD, ElabInfo(..), ElabShellCmd(..)
+  , Idris, IState(..)
+  , OptInfo
+  , OutputMode(..)
+  , getErasureInfo
+  , toplevel
+  , prettyName , ppOptionIst , pprintPTerm , prettyImp, ppOption
+  , HowMuchDocs(..)
+  )
 import Idris.Delaborate
 import Idris.Docs (getDocs, pprintDocs, pprintConstDocs)
 import Idris.ElabDecls
@@ -556,4 +576,5 @@ docStr e prf (Left n) = do ist <- getIState
                                        return $ pprintDocs ist doc
 docStr e prf (Right c) = do ist <- getIState
                             return (False, e, False, prf, Right . iRenderResult $ pprintConstDocs ist c (constDocs c))
+
 search e prf t = return (False, e, False, prf, Right $ searchByType [] t)

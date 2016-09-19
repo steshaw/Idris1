@@ -6,15 +6,15 @@ License     : BSD3
 Maintainer  : The Idris Community.
 -}
 
-{-# LANGUAGE PatternGuards, CPP #-}
-{-# OPTIONS_GHC -fwarn-incomplete-patterns -fwarn-unused-imports #-}
+{-# LANGUAGE PatternGuards #-}
+{-# OPTIONS_GHC -fwarn-incomplete-patterns #-}
+{-# OPTIONS_GHC -fwarn-unused-imports #-}
+
 module Idris.Reflection where
 
-#if __GLASGOW_HASKELL__ < 710
+import Prelude hiding ((<$>), (<*>), pure, mapM)
 import Control.Applicative ((<$>), (<*>), pure)
-import Prelude hiding (mapM)
 import Data.Traversable (mapM)
-#endif
 import Control.Monad (liftM, liftM2, liftM4)
 import Control.Monad.State.Strict (lift)
 import Data.Maybe (catMaybes)
@@ -26,7 +26,7 @@ import Idris.Core.Elaborate (claim, fill, focus, getNameFrom, initElaborator,
 import Idris.Core.Evaluate (Def(TyDecl), initContext, lookupDefExact, lookupTyExact)
 import Idris.Core.TT
 
-import Idris.AbsSyntaxTree (ArgOpt(..),ElabD, IState(tt_ctxt, idris_implicits,idris_datatypes, idris_patdefs),
+import Idris.AbsSyntaxTree (ArgOpt(..), ElabD, IState(tt_ctxt, idris_implicits, idris_datatypes, idris_patdefs),
                             PArg'(..), PArg, PTactic, PTactic'(..), PTerm(..), Fixity (..),
                             initEState, pairCon, pairTy)
 import Idris.Delaborate (delab)

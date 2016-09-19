@@ -21,10 +21,7 @@ import Idris.Package.Common
 import Control.Monad.State.Strict
 import Control.Applicative
 import System.FilePath (takeFileName, isValid)
-import Data.Maybe (isNothing, fromJust)
 import Data.List (union)
-
-import Util.System
 
 type PParser = StateT PkgDesc IdrisInnerParser
 
