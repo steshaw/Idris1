@@ -77,7 +77,6 @@ import Data.Foldable (Foldable)
 import Data.Traversable (Traversable)
 import Data.Typeable (Typeable)
 import Data.Binary hiding (get, put)
-import Foreign.Storable (sizeOf)
 import GHC.Generics (Generic)
 
 import Numeric.IEEE (IEEE (identicalIEEE))

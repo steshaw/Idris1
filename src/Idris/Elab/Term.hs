@@ -5,12 +5,41 @@ Copyright   :
 License     : BSD3
 Maintainer  : The Idris Community.
 -}
+
 {-# LANGUAGE LambdaCase, PatternGuards, ViewPatterns #-}
 {-# OPTIONS_GHC -fwarn-incomplete-patterns #-}
+
 module Idris.Elab.Term where
 
-import Idris.AbsSyntax
-import Idris.AbsSyntaxTree
+import Idris.AbsSyntax (
+    mkUniqueNames, addImplBound, getCoercionsTo, mkPApp, logElab
+  , getIState, updateIState, getContext, updateContext, getName
+  , totcheck , addImplementation, solveDeferred, addDeferred, setTotality
+  , infTerm, infP
+  , matchClause
+  , addCalls
+  , addImplPat
+  , addIBC
+  , initEState
+  )
+import Idris.AbsSyntaxTree (
+    PTerm(..), PDecl, PDecl'(..), PClause, PClause'(..), PArg, PArg'(..), ArgOpt(..), PAltType(..)
+  , PTactic, PTactic'(..)
+  , FnOpts, FnOpt(..) , PunInfo(..), FixDecl(..)
+  , showTmImpls
+  , pimp, pexp
+  , unitTy, unitCon, eqTy, pairTy, pairCon, upairTy, upairCon, sigmaTy, sigmaCon
+  , RDeclInstructions(..)
+  , getInferTerm, inferCon
+  , Plicity(..), is_scoped
+  , allNamesIn
+  , FnOpts
+  , EState(..), ElabInfo(..), ElabD, TIData(..), toplevel
+  , Idris, IState(..), IOption(..), InterfaceInfo(..)
+  , highlightSource
+  , highestFC
+  , IBCWrite(..)
+  )
 import Idris.Delaborate
 import Idris.Error
 import Idris.ProofSearch
@@ -62,8 +91,6 @@ data ElabResult = ElabResult {
     -- | The new global name counter
   , resultName :: Int
   }
-
-
 
 -- | Using the elaborator, convert a term in raw syntax to a fully
 -- elaborated, typechecked term.
@@ -1418,7 +1445,7 @@ elab ist info emode opts fn tm
     insertLazy ina t@(PApp _ (PRef _ _ (UN l)) _) | l == txt "Delay" = return t
     insertLazy ina t@(PApp _ (PRef _ _ (UN l)) _) | l == txt "Force" = return t
     insertLazy ina (PCoerced t) = return t
-    -- Don't add a delay to top level pattern variables, since they 
+    -- Don't add a delay to top level pattern variables, since they
     -- can be forced on the rhs if needed
     insertLazy ina t@(PPatvar _ _) | pattern && not (e_guarded ina) = return t
     insertLazy ina t =
@@ -2887,7 +2914,7 @@ processTacticDecls info steps =
                  updateIState $ \i -> i { idris_name = name' }
                  case recheck (constraintNS info) ctxt [] (forget lhs_tm) lhs_tm of
                       OK _ -> return True
-                      err -> return False
+                      _    -> return False
             -- if it's a recoverable error, the case may become possible
             Error err -> if tcgen then return (recoverableCoverage ctxt err)
                                   else return (validCoverageCase ctxt err ||

@@ -1349,13 +1349,25 @@ instance Sized a => Sized (PArg' a) where
 deriving instance Binary PArg'
 !-}
 
+pimp :: Name -> PTerm -> Bool -> PArg' PTerm
+--pimp :: Name -> t -> Bool -> PArg' t
 pimp n t mach = PImp 1 mach [] n t
-pexp t        = PExp 1 [] (sMN 0 "arg") t
-pconst t      = PConstraint 1 [] (sMN 0 "carg") t
+
+pexp :: PTerm -> PArg' PTerm
+--pexp :: t -> PArg' t
+pexp t = PExp 1 [] (sMN 0 "arg") t
+
+pconst :: PTerm -> PArg' PTerm
+--pconst :: t -> PArg' t
+pconst t = PConstraint 1 [] (sMN 0 "carg") t
+
+ptacimp :: Name -> PTerm -> PTerm -> PArg' PTerm
+--ptacimp :: Name -> t -> t -> PArg' t
 ptacimp n s t = PTacImplicit 2 [] n s t
 
 type PArg = PArg' PTerm
 
+-- XXX: Only used by Idris.Elab.Term.
 -- | Get the highest FC in a term, if one exists
 highestFC :: PTerm -> Maybe FC
 highestFC (PQuote _)              = Nothing
@@ -1556,6 +1568,7 @@ updateSyntaxRules rules (SyntaxRules sr) = SyntaxRules newRules
     symCompare (SimpleExpr _) (Expr _)          = GT
     symCompare (SimpleExpr e1) (SimpleExpr e2)  = compare e1 e2
 
+initDSL :: DSL
 initDSL = DSL (PRef f [] (sUN ">>="))
               (PRef f [] (sUN "<*>"))
               (PRef f [] (sUN "pure"))
@@ -1609,11 +1622,14 @@ expandNS syn n = case syn_namespace syn of
 
 -- For inferring types of things
 
+bi, primfc :: FC
 bi = fileFC "builtin"
 primfc = fileFC "(primitive)"
 
+inferTy, inferCon  :: Name
 inferTy   = sMN 0 "__Infer"
 inferCon  = sMN 0 "__infer"
+
 inferDecl = PDatadecl inferTy primfc
                       (PType bi)
                       [(emptyDocstring, [], inferCon, primfc, PPi impl (sMN 0 "iType") primfc (PType bi) (
@@ -1639,25 +1655,34 @@ getInferType (App _ (App _ _ ty) _) = ty
 
 -- Handy primitives: Unit, False, Pair, MkPair, =, mkForeign
 
+primNames :: [Name]
 primNames = [inferTy, inferCon]
 
+unitTy, unitCon :: Name
 unitTy   = sUN "Unit"
 unitCon  = sUN "MkUnit"
 
+falseTy :: Name
+falseTy   = sUN "Void"
 falseDoc = fmap (const $ Msg "") . parseDocstring . T.pack $
              "The empty type, also known as the trivially false proposition." ++
              "\n\n" ++
              "Use `void` or `absurd` to prove anything if you have a variable " ++
              "of type `Void` in scope."
-falseTy   = sUN "Void"
 
+pairTy :: Name
 pairTy    = sNS (sUN "Pair") ["Builtins"]
+pairCon :: Name
 pairCon   = sNS (sUN "MkPair") ["Builtins"]
 
+upairTy :: Name
 upairTy    = sNS (sUN "UPair") ["Builtins"]
+upairCon :: Name
 upairCon   = sNS (sUN "MkUPair") ["Builtins"]
 
+eqTy :: Name
 eqTy  = sUN "="
+eqCon :: Name
 eqCon = sUN "Refl"
 eqDoc = fmap (const (Left $ Msg "")) . parseDocstring . T.pack $
           "The propositional equality type. A proof that `x` = `y`." ++
@@ -1702,14 +1727,16 @@ modDocName :: Name
 modDocName = sMN 0 "ModuleDocs"
 
 -- Defined in builtins.idr
+sigmaTy :: Name
 sigmaTy   = sNS (sUN "DPair") ["Builtins"]
+sigmaCon :: Name
 sigmaCon = sNS (sUN "MkDPair") ["Builtins"]
 
 piBind :: [(Name, PTerm)] -> PTerm -> PTerm
 piBind = piBindp expl
 
 piBindp :: Plicity -> [(Name, PTerm)] -> PTerm -> PTerm
-piBindp p [] t = t
+piBindp _ [] t = t
 piBindp p ((n, ty):ns) t = PPi p n NoFC ty (piBindp p ns t)
 
 
@@ -1757,11 +1784,11 @@ annotationColour ist (AnnName n _ _ _) =
        _ | isTConName n ctxt     -> Just $ typeColour theme
        _ | isPostulateName n ist -> Just $ postulateColour theme
        _ | otherwise             -> Nothing -- don't colourise unknown names
-annotationColour ist (AnnTextFmt fmt) = Just (colour fmt)
+annotationColour _   (AnnTextFmt fmt) = Just (colour fmt)
   where colour BoldText      = IdrisColour Nothing True False True False
         colour UnderlineText = IdrisColour Nothing True True False False
         colour ItalicText    = IdrisColour Nothing True False False True
-annotationColour ist _ = Nothing
+annotationColour _   _ = Nothing
 
 
 -- | Colourise annotations according to an Idris state. It ignores the

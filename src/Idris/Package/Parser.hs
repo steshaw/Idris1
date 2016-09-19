@@ -13,9 +13,6 @@ module Idris.Package.Parser where
 
 import Text.Trifecta hiding (span, charLiteral, natural, symbol, char, string, whiteSpace)
 import qualified Text.PrettyPrint.ANSI.Leijen as PP
-import Idris.Core.TT
-import Idris.REPL
-import Idris.AbsSyntaxTree
 import Idris.Parser.Helpers hiding (stringLiteral)
 import Idris.CmdOptions
 

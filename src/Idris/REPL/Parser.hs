@@ -27,8 +27,6 @@ import Control.Monad.State.Strict
 
 import Text.Parser.Combinators
 import Text.Parser.Char(anyChar,oneOf)
-import Text.Trifecta(Result, parseString)
-import Text.Trifecta.Delta
 
 import Debug.Trace
 import Data.List

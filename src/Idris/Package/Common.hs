@@ -8,7 +8,7 @@ module Idris.Package.Common where
 
 import Idris.Core.TT (Name)
 
-import Idris.AbsSyntaxTree (Opt(..))
+import Idris.AbsSyntaxTree (Opt)
 
 -- | Description of an Idris package.
 data PkgDesc = PkgDesc {
