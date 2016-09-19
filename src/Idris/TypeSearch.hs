@@ -200,7 +200,7 @@ data Score = Score
   } deriving (Eq, Show)
 
 displayScore :: Score -> Doc OutputAnnotation
-displayScore s = case both noMods (asymMods s) of
+displayScore sc = case both noMods (asymMods sc) of
   Sided True  True  -> annotated EQ "=" -- types are isomorphic
   Sided True  False -> annotated LT "<" -- found type is more general than searched type
   Sided False True  -> annotated GT ">" -- searched type is more general than found type
