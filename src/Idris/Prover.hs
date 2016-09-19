@@ -5,7 +5,9 @@ Copyright   :
 License     : BSD3
 Maintainer  : The Idris Community.
 -}
+
 {-# LANGUAGE PatternGuards #-}
+
 module Idris.Prover (prover, showProof, showRunElab) where
 
 -- Hack for GHC 7.10 and earlier compat without CPP or warnings
@@ -48,7 +50,6 @@ import Control.Monad.State.Strict
 import Control.DeepSeq
 
 import Util.Pretty
-import Debug.Trace
 
 -- | Launch the proof shell
 prover :: ElabInfo -> Bool -> Bool -> Name -> Idris ()

@@ -27,12 +27,11 @@ import Control.Monad.State.Strict
 
 import Text.Parser.Combinators
 import Text.Parser.Char(anyChar,oneOf)
+import Text.Trifecta (Result)
 
-import Debug.Trace
 import Data.List
 import Data.List.Split(splitOn)
 import Data.Char(isSpace, toLower)
-import qualified Data.ByteString.UTF8 as UTF8
 
 parseCmd :: IState -> String -> String -> Result (Either String Command)
 parseCmd i inputname = P.runparser pCmd i inputname . trim
