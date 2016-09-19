@@ -6,21 +6,20 @@ License     : BSD3
 Maintainer  : The Idris Community.
 -}
 
-{-# OPTIONS_GHC -fwarn-incomplete-patterns -fwarn-unused-imports #-}
+{-# OPTIONS_GHC -fwarn-incomplete-patterns #-}
+{-# OPTIONS_GHC -fwarn-unused-imports #-}
 
 module Idris.REPL.Browse (namespacesInNS, namesInNS) where
 
-import Control.Monad (filterM)
+import Idris.Core.Evaluate (ctxtAlist, Accessibility(Private, Hidden), lookupDefAccExact)
+import Idris.Core.TT (Name(..))
+import Idris.AbsSyntaxTree (Idris)
+import Idris.AbsSyntax (getContext)
 
+import Control.Monad (filterM)
 import Data.List (isSuffixOf, nub)
 import Data.Maybe (mapMaybe)
 import qualified Data.Text as T (unpack)
-
-import Idris.Core.Evaluate (ctxtAlist, Accessibility(Private, Hidden), lookupDefAccExact)
-import Idris.Core.TT (Name(..))
-
-import Idris.AbsSyntaxTree (Idris)
-import Idris.AbsSyntax (getContext)
 
 -- | Find the sub-namespaces of a given namespace. The components
 -- should be in display order rather than the order that they are in
@@ -44,7 +43,7 @@ namesInNS ns = do let revNS = reverse ns
                   let namesInSpace = [ n | (n, space) <- mapMaybe (getNS . fst) allNames
                                          , revNS == space ]
                   filterM accessible namesInSpace
-  where getNS n@(NS (UN n') namespace) = Just (n, (map T.unpack namespace))
+  where getNS n@(NS (UN _) namespace) = Just (n, (map T.unpack namespace))
         getNS _ = Nothing
         accessible n = do ctxt <- getContext
                           case lookupDefAccExact n False ctxt of
