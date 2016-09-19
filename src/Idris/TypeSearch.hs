@@ -5,7 +5,9 @@ Copyright   :
 License     : BSD3
 Maintainer  : The Idris Community.
 -}
-{-# LANGUAGE ScopedTypeVariables #-}
+
+{-# OPTIONS_GHC -Wall -fwarn-tabs #-}
+{-# OPTIONS_GHC -fno-warn-unused-binds #-}
 
 module Idris.TypeSearch (
     searchByType
@@ -13,15 +15,15 @@ module Idris.TypeSearch (
   , defaultScoreFunction
   ) where
 
-import Control.Applicative (Applicative (..), (<$>), (<*>), (<|>))
+import Prelude hiding (pred, Applicative(..), (<$>), (<*>), Monoid(..), traverse)
+import Control.Applicative ((<$>), (<*>), (<|>))
 import Control.Arrow       (first, second, (&&&), (***))
 import Control.Monad       (when, guard)
-
 import           Data.List   (find, partition, (\\))
 import           Data.Map    (Map)
 import qualified Data.Map    as M
 import           Data.Maybe  (catMaybes, fromMaybe, isJust, maybeToList, mapMaybe)
-import           Data.Monoid (Monoid (mempty, mappend))
+import           Data.Monoid hiding ((<>))
 import           Data.Ord    (comparing)
 import qualified Data.PriorityQueue.FingerTree as Q
 import           Data.Set                           (Set)
@@ -29,20 +31,18 @@ import qualified Data.Set                      as S
 import qualified Data.Text                     as T (pack, isPrefixOf)
 import           Data.Traversable                   (traverse)
 
-import Idris.AbsSyntax     (addUsingConstraints, addImpl, getIState, putIState, implicit, logLvl)
+import Idris.AbsSyntax     (addUsingConstraints, addImpl, getIState, putIState, implicit)
 import Idris.AbsSyntaxTree (interface_implementations, InterfaceInfo, defaultSyntax, eqTy, Idris
                            , IState (idris_interfaces, idris_docstrings, tt_ctxt, idris_outputmode),
                            implicitAllowed, OutputMode(..), PTerm, toplevel)
 import Idris.Core.Evaluate (Context (definitions), Def (Function, TyDecl, CaseOp), normaliseC)
-import Idris.Core.TT       hiding (score)
+import Idris.Core.TT
 import Idris.Core.Unify    (match_unify)
 import Idris.Delaborate    (delabTy)
 import Idris.Docstrings    (noDocs, overview)
 import Idris.Elab.Type     (elabType)
 import Idris.Output        (iputStrLn, iRenderOutput, iPrintResult, iRenderError, iRenderResult, prettyDocumentedIst)
 import Idris.IBC
-
-import Prelude hiding (pred)
 
 import Util.Pretty (text, char, vsep, (<>), Doc, annotate)
 
@@ -55,7 +55,7 @@ searchByType pkgs pterm = do
   mapM_ loadPkgIndex pkgs
   pterm' <- addUsingConstraints syn emptyFC pterm
   pterm'' <- implicit toplevel syn name pterm'
-  let pterm'''  = addImpl [] i pterm''
+  let pterm'''  = addImpl [] i pterm'' -- XXX: pterm''' is unused.
   ty <- elabType toplevel syn (fst noDocs) (snd noDocs) emptyFC [] name NoFC pterm'
   let names = searchUsing searchPred i ty
   let names' = take numLimit names
@@ -162,7 +162,7 @@ usedVars = f True where
 
 -- | Remove a node from a directed acyclic graph
 deleteFromDag :: Ord n => n -> [((n, TT n), (a, Set n))] -> [((n, TT n), (a, Set n))]
-deleteFromDag name [] = []
+deleteFromDag _    [] = []
 deleteFromDag name (((name2, ty), (ix, set)) : xs) = (if name == name2
   then id
   else (((name2, ty) , (ix, S.delete name set)) :) ) (deleteFromDag name xs)
@@ -200,7 +200,7 @@ data Score = Score
   } deriving (Eq, Show)
 
 displayScore :: Score -> Doc OutputAnnotation
-displayScore score = case both noMods (asymMods score) of
+displayScore s = case both noMods (asymMods s) of
   Sided True  True  -> annotated EQ "=" -- types are isomorphic
   Sided True  False -> annotated LT "<" -- found type is more general than searched type
   Sided False True  -> annotated GT ">" -- searched type is more general than found type
@@ -261,7 +261,7 @@ data State = State
   , argsAndInterfaces :: !(Sided (ArgsDAG, Interfaces))
      -- ^ arguments and interface constraints for each type which have yet to be resolved
   , score             :: !Score -- ^ the score so far
-  , usedNames         :: ![Name] -- ^ all names that have been used
+  , usedNames         :: ![Name] -- ^ all names that have been used -- XXX: Unused.
   } deriving Show
 
 modifyTypes :: (Type -> Type) -> (ArgsDAG, Interfaces) -> (ArgsDAG, Interfaces)
@@ -301,7 +301,7 @@ interfaceUnify interfaceInfo ctxt ty tyTry = do
 
 isInterfaceArg :: Ctxt InterfaceInfo -> Type -> Bool
 isInterfaceArg interfaceInfo ty = not (null (getInterfaceName clss >>= flip lookupCtxt interfaceInfo)) where
-  (clss, args) = unApply ty
+  (clss, _args) = unApply ty
   getInterfaceName (P (TCon _ _) interfaceName _) = [interfaceName]
   getInterfaceName _ = []
 
@@ -329,10 +329,10 @@ flipEqualities t = case t of
 -- | Try to match two types together in a unification-like procedure.
 -- Returns a list of types and their minimum scores, sorted in order
 -- of increasing score.
-matchTypesBulk :: forall info. IState -> Int -> Type -> [(info, Type)] -> [(info, Score)]
+matchTypesBulk :: IState -> Int -> Type -> [(Name, Type)] -> [(Name, Score)]
 matchTypesBulk istate maxScore type1 types = getAllResults startQueueOfQueues where
   getStartQueues :: (info, Type) -> Maybe (Score, (info, Q.PQueue Score State))
-  getStartQueues nty@(info, type2) = case mapMaybe startStates ty2s of
+  getStartQueues (info, type2) = case mapMaybe startStates ty2s of
     [] -> Nothing
     xs -> Just (minimum (map fst xs), (info, Q.fromList xs))
     where
@@ -355,10 +355,10 @@ matchTypesBulk istate maxScore type1 types = getAllResults startQueueOfQueues wh
     usedns = map fst startingHoles
     startingHoles = argNames1 ++ argNames2
 
-    startingTypes = [(retTy1, retTy2)]
+    startingTypes = [(retTy1, retTy2)] -- XXX: Unused.
 
 
-  startQueueOfQueues :: Q.PQueue Score (info, Q.PQueue Score State)
+  startQueueOfQueues :: Q.PQueue Score (Name, Q.PQueue Score State)
   startQueueOfQueues = Q.fromList $ mapMaybe getStartQueues types
 
   getAllResults :: Q.PQueue Score (info, Q.PQueue Score State) -> [(info, Score)]
