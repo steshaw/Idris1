@@ -3,6 +3,14 @@ module Idris.REPL.Commands where
 import Idris.Core.TT
 import Idris.Colours
 import Idris.AbsSyntaxTree
+  ( PDecl, PTerm
+  , HowMuchDocs
+  , Codegen
+  , LogCat
+  , Opt
+  , ConsoleWidth
+  , OutputFmt
+  )
 
 -- | REPL commands
 data Command = Quit
