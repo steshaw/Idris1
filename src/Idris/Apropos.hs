@@ -5,12 +5,17 @@ Copyright   :
 License     : BSD3
 Maintainer  : The Idris Community.
 -}
+
+{-# OPTIONS_GHC -Wall -fwarn-tabs #-}
+{-# OPTIONS_GHC -Wno-unused-top-binds #-} -- FIXME: Remove
+
 module Idris.Apropos (apropos, aproposModules) where
 
-import Idris.AbsSyntax
+import Idris.AbsSyntaxTree
+  ( IState(..)
+  , unitTy, unitCon, pairTy, pairCon, eqTy, eqCon, sigmaTy, sigmaCon)
 import Idris.Core.Evaluate (ctxtAlist, Def(..))
-import Idris.Core.TT (Name(..), Type, TT(..), NameType(..), Binder(..), Const(..),
-                      lookupCtxtExact, toAlist)
+import Idris.Core.TT (Name(..), Type, TT(..), NameType(..), Binder(..), Const(..), toAlist)
 import Idris.Docstrings (Docstring, DocTerm, containsText)
 
 import Data.List (nub, nubBy, intersperse)
@@ -30,8 +35,8 @@ apropos ist what = let defs = ctxtAlist (tt_ctxt ist)
                    in nub (map fst (isAproposAll parts defs) ++
                            map fst (isAproposAll parts docs))
   where isAproposAll []          xs = xs
-        isAproposAll (what:more) xs = filter (isApropos what)
-                                             (isAproposAll more xs)
+        isAproposAll (w:more) xs = filter (isApropos w)
+                                          (isAproposAll more xs)
         parts = filter ((> 0) . T.length) . T.splitOn (T.pack " ") $ what
 
 -- | Find modules whose names or docstrings contain all the
@@ -42,11 +47,11 @@ aproposModules ist what = let mods  = toAlist (idris_moduledocs ist)
                                             (isAproposAll parts mods)
                           in map unModName found
   where isAproposAll []          xs = xs
-        isAproposAll (what:more) xs = filter (\(n,d) -> isApropos what n || isApropos what d)
-                                             (isAproposAll more xs)
+        isAproposAll (w:more) xs = filter (\(n,d) -> isApropos w n || isApropos w d)
+                                          (isAproposAll more xs)
         parts = filter ((> 0) . T.length) . T.splitOn (T.pack " ") $ what
         unModName (NS _ ns, d) = ((concat . intersperse "." . map T.unpack . reverse) ns, d)
-        unModName (n,       d) = ("<<MODULE>>", d)
+        unModName (_,       d) = ("<<MODULE>>", d)
 
 textIn :: T.Text -> T.Text -> Bool
 textIn a b = T.isInfixOf (T.toLower a) (T.toLower b)
@@ -66,27 +71,27 @@ instance Apropos Name where
   isApropos _   _          = False -- we don't care about case blocks, MNs, etc
 
 instance Apropos Def where
-  isApropos str (Function ty tm) = isApropos str ty
+  isApropos str (Function ty _) = isApropos str ty
   isApropos str (TyDecl _ ty) = isApropos str ty
   isApropos str (Operator ty _ _) = isApropos str ty
-  isApropos str (CaseOp _ ty ty' _ _ _) = isApropos str ty
+  isApropos str (CaseOp _ ty _ _ _ _) = isApropos str ty
 
 instance Apropos (Binder (TT Name)) where
   isApropos str (Lam ty)      = str == T.pack "\\" || isApropos str ty
   isApropos str (Pi _ ty _)   = str == T.pack "->" || isApropos str ty
   isApropos str (Let ty val)  = str == T.pack "let" || isApropos str ty || isApropos str val
   isApropos str (NLet ty val) = str == T.pack "let" || isApropos str ty || isApropos str val
-  isApropos str _             = False -- these shouldn't occur in defined libraries
+  isApropos _   _             = False -- these shouldn't occur in defined libraries
 
 instance Apropos (TT Name) where
   isApropos str (P Ref n ty) = isApropos str n || isApropos str ty
   isApropos str (P (TCon _ _) n ty) = isApropos str n || isApropos str ty
   isApropos str (P (DCon _ _ _) n ty) = isApropos str n || isApropos str ty
   isApropos str (P Bound _ ty)      = isApropos str ty
-  isApropos str (Bind n b tm)       = isApropos str b || isApropos str tm
+  isApropos str (Bind _ b tm)       = isApropos str b || isApropos str tm
   isApropos str (App _ t1 t2)       = isApropos str t1 || isApropos str t2
-  isApropos str (Constant const)    = isApropos str const
-  isApropos str _                   = False
+  isApropos str (Constant c)        = isApropos str c
+  isApropos _   _                   = False
 
 instance Apropos Const where
   isApropos str c = textIn str (T.pack (show c))
@@ -104,6 +109,7 @@ instance (Apropos a) => Apropos (Maybe a) where
 instance (Apropos a) => Apropos [a] where
   isApropos str xs = any (isApropos str) xs
 
+-- XXX: Unused.
 defType :: Def -> Type
 defType (Function t _) = t
 defType (TyDecl _ t) = t
