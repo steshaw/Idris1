@@ -4,7 +4,9 @@ Description : A parser for the CmdOptions for the Idris executable.
 License     : BSD3
 Maintainer  : The Idris Community.
 -}
+
 {-# LANGUAGE Arrows #-}
+
 module Idris.CmdOptions (
     module Idris.CmdOptions
   , opt
@@ -12,15 +14,16 @@ module Idris.CmdOptions (
   , getPkgREPL, getPkgTest, getPort, getIBCSubDir
   ) where
 
-import Idris.AbsSyntaxTree (
-    Opt(..), REPLPort(..)
+import Idris.AbsSyntax
+  ( opt, getClient, getPkg, getPkgCheck, getPkgClean, getPkgMkDoc
+  , getPkgREPL, getPkgTest, getPort, getIBCSubDir
+  )
+import Idris.AbsSyntaxTree
+  ( Opt(..), REPLPort(..)
   , LogCat(..), strLogCat, parserCats, elabCats, codegenCats
   , Optimisation(..), LanguageExt(..)
   , ConsoleWidth(..)
-  , Codegen(..), IRFormat(..))
-import Idris.AbsSyntax (
-    opt, getClient, getPkg, getPkgCheck, getPkgClean, getPkgMkDoc
-  , getPkgREPL, getPkgTest, getPort, getIBCSubDir
+  , Codegen(..), IRFormat(..)
   )
 import Idris.Info (getIdrisVersion)
 
