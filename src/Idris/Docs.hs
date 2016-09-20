@@ -5,22 +5,29 @@ Copyright   :
 License     : BSD3
 Maintainer  : The Idris Community.
 -}
+
 {-# LANGUAGE DeriveFunctor, PatternGuards, MultiWayIf #-}
 {-# OPTIONS_GHC -fwarn-incomplete-patterns #-}
+
 module Idris.Docs (
     pprintDocs
   , getDocs, pprintConstDocs, pprintTypeDoc
   , FunDoc, FunDoc'(..), Docs, Docs'(..)
   ) where
 
-import Idris.AbsSyntax (
-  PTerm(..), PDecl'(..), PArg'(..), Plicity(..), RecordInfo(..), Fixity, FixDecl(..),
-  InterfaceInfo(..),
-  HowMuchDocs(..),
-  Idris, IState(..), getIState,
-  basename,
-  PPOption(..), pprintPTerm, prettyName, prettyIst, ppOptionIst,
-  modDocName, typeDescription, type1Doc)
+import Idris.AbsSyntax
+  ( getIState
+  , typeDescription, type1Doc
+  )
+import Idris.AbsSyntaxTree
+  ( PTerm(..), PDecl'(..), PArg'(..), Plicity(..), RecordInfo(..), Fixity, FixDecl(..)
+  , InterfaceInfo(..)
+  , HowMuchDocs(..)
+  , Idris, IState(..)
+  , basename
+  , PPOption(..), pprintPTerm, prettyName, prettyIst, ppOptionIst
+  , modDocName,
+  )
 import Idris.Delaborate
 import Idris.Core.TT
 import Idris.Core.Evaluate
@@ -402,7 +409,7 @@ pprintConstDocs ist c str = text "Primitive" <+> text (if constIsType c then "ty
   where t (Fl _)  = PConstant NoFC $ AType ATFloat
         t (BI _)  = PConstant NoFC $ AType (ATInt ITBig)
         t (Str _) = PConstant NoFC StrType
-        t (Ch c)  = PConstant NoFC $ AType (ATInt ITChar)
+        t (Ch _)  = PConstant NoFC $ AType (ATInt ITChar)
         t _       = PType NoFC
 
 
