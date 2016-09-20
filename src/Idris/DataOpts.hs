@@ -5,11 +5,11 @@ Copyright   :
 License     : BSD3
 Maintainer  : The Idris Community.
 -}
+
 {-# LANGUAGE PatternGuards #-}
 
 module Idris.DataOpts(applyOpts) where
 
-import Idris.AbsSyntax ()
 import Idris.AbsSyntaxTree (Idris)
 import Idris.Core.TT hiding (arity)
 
