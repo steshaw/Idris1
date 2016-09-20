@@ -5,10 +5,26 @@ Copyright   :
 License     : BSD3
 Maintainer  : The Idris Community.
 -}
+
+{-# OPTIONS_GHC -Wall -fwarn-tabs #-}
+
 module Idris.Directives(directiveAction) where
 
 import Idris.AbsSyntax
-import Idris.ASTUtils
+  ( getIState, updateIState, getContext
+  , addLib, addDyLib, addIBC, addObjectFile, addFlag, addHdr
+  , addNameHint, addFunctionErrorHandlers, addLangExt
+  , addDeprecated, addFragile, addUsedName
+  , setAccessibility, setInjectivity, setTotality, setLogLevel
+  , setAutoImpls
+  , allImportDirs
+  , runIO, throwError
+  )
+import Idris.AbsSyntaxTree
+  ( Idris, IState(..)
+  , Directive(..)
+  , IBCWrite(..)
+  )
 import Idris.Imports
 import Idris.Output (sendHighlighting)
 
@@ -119,7 +135,6 @@ disambiguate n = do
     [(n', _)] -> return n'
     []        -> throwError (NoSuchVariable n)
     more      -> throwError (CantResolveAlts (map fst more))
-
 
 allNamespaces :: Name -> Idris [Name]
 allNamespaces n = do
