@@ -10,15 +10,16 @@ Maintainer  : The Idris Community.
 
 module Idris.DSL where
 
-import Data.Generics.Uniplate.Data (transform)
-
-import Idris.AbsSyntax
-
+import Idris.AbsSyntaxTree
+  ( PTerm(..), PDo'(..), PArg'(..), pexp, unitTy
+  , SyntaxInfo(..)
+  , DSL, DSL'(..)
+  , IState(idris_dsls)
+  )
 import Idris.Core.TT
-import Idris.Core.Evaluate
 
 import Control.Monad.State.Strict
-import Debug.Trace
+import Data.Generics.Uniplate.Data (transform)
 
 debindApp :: SyntaxInfo -> PTerm -> PTerm
 debindApp syn t = debind (dsl_bind (dsl_info syn)) t
@@ -26,7 +27,7 @@ debindApp syn t = debind (dsl_bind (dsl_info syn)) t
 dslify :: SyntaxInfo -> IState -> PTerm -> PTerm
 dslify syn i = transform dslifyApp
   where
-    dslifyApp (PApp fc (PRef _ _ f) [a])
+    dslifyApp (PApp _ (PRef _ _ f) [a])
         | [d] <- lookupCtxt f (idris_dsls i)
             = desugar (syn { dsl_info = d }) i (getTm a)
     dslifyApp t = t
@@ -53,20 +54,20 @@ mkTTName fc n =
          _ -> error "Invalid name from user syntax for DSL name"
 
 expandSugar :: DSL -> PTerm -> PTerm
-expandSugar dsl (PLam fc n nfc ty tm)
+expandSugar dsl (PLam fc n _   _  tm)
     | Just lam <- dsl_lambda dsl
         = let sc = PApp fc lam [ pexp (mkTTName fc n)
                                , pexp (var dsl n tm 0)]
           in expandSugar dsl sc
 expandSugar dsl (PLam fc n nfc ty tm) = PLam fc n nfc (expandSugar dsl ty) (expandSugar dsl tm)
-expandSugar dsl (PLet fc n nfc ty v tm)
+expandSugar dsl (PLet fc n _   _  v tm)
     | Just letb <- dsl_let dsl
         = let sc = PApp (fileFC "(dsl)") letb [ pexp (mkTTName fc n)
                                               , pexp v
                                               , pexp (var dsl n tm 0)]
           in expandSugar dsl sc
 expandSugar dsl (PLet fc n nfc ty v tm) = PLet fc n nfc (expandSugar dsl ty) (expandSugar dsl v) (expandSugar dsl tm)
-expandSugar dsl (PPi p n fc ty tm)
+expandSugar dsl (PPi _ n _ ty tm)
     | Just pi <- dsl_pi dsl
         = let sc = PApp (fileFC "(dsl)") pi [ pexp (mkTTName (fileFC "(dsl)") n)
                                             , pexp ty
@@ -102,8 +103,8 @@ expandSugar dsl (PGoal fc r n sc)
 expandSugar dsl (PDoBlock ds)
     = expandSugar dsl $ debind (dsl_bind dsl) (block (dsl_bind dsl) ds)
   where
-    block b [DoExp fc tm] = tm
-    block b [a] = PElabError (Msg "Last statement in do block must be an expression")
+    block _ [DoExp _ tm] = tm
+    block _ [_] = PElabError (Msg "Last statement in do block must be an expression")
     block b (DoBind fc n nfc tm : rest)
         = PApp fc b [pexp tm, pexp (PLam fc n nfc Placeholder (block b rest))]
     block b (DoBindP fc p tm alts : rest)
