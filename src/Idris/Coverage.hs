@@ -5,7 +5,9 @@ Copyright   :
 License     : BSD3
 Maintainer  : The Idris Community.
 -}
+
 {-# LANGUAGE PatternGuards #-}
+
 module Idris.Coverage where
 
 import Idris.Core.TT
@@ -13,9 +15,27 @@ import Idris.Core.Evaluate
 import Idris.Core.CaseTree
 
 import Idris.AbsSyntax
+  ( getIState, putIState, getContext, setContext, getErasureInfo
+  , getTotality, setTotality, clear_totcheck
+  , cmdOptType
+  , addImpl'
+  , logElab, logCoverage
+  , addToCG, addIBC
+  , stripUnmatchable, matchClause
+  )
+import Idris.AbsSyntaxTree
+  ( Idris, IState(..)
+  , PTerm(..), PArg, PArg'(..), mapPT, showTm, showTmImpls, pexp, pimp
+  , FnOpt(TotalFn, PartialFn, CoveringFn, AssertTotal)
+  , PunInfo(..)
+  , SCGEntry, CGInfo(..), SizeChange(..)
+  , sigmaCon, pairCon
+  , IBCWrite(IBCTotal, IBCTotCheckErr)
+  , Opt(WarnPartial)
+  )
 import Idris.Delaborate
 import Idris.Error
-import Idris.Output (iWarn, iputStrLn)
+import Idris.Output (iWarn)
 
 import Data.Char
 import Data.List
@@ -901,11 +921,12 @@ noPartial []               = Total []
 
 collapse :: [Totality] -> Totality
 collapse xs = collapse' Unchecked xs
-collapse' def (Total r : xs)   = Total r
-collapse' def (Unchecked : xs) = collapse' def xs
-collapse' def (d : xs)         = collapse' d xs
--- collapse' Unchecked []         = Total []
-collapse' def []               = def
+  where
+    collapse' def (Total r : _)   = Total r
+    collapse' def (Unchecked : xs) = collapse' def xs
+    collapse' def (d : xs)         = collapse' d xs
+    -- collapse' Unchecked []         = Total []
+    collapse' def []               = def
 
 totalityCheckBlock :: Idris ()
 totalityCheckBlock = do
