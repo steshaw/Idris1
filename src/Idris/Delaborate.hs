@@ -5,8 +5,10 @@ Copyright   :
 License     : BSD3
 Maintainer  : The Idris Community.
 -}
+
 {-# LANGUAGE PatternGuards #-}
 {-# OPTIONS_GHC -fwarn-incomplete-patterns #-}
+
 module Idris.Delaborate (
     annName, bugaddr, delab, delabDirect, delab', delabMV, delabSugared
   , delabTy, delabTy', fancifyAnnots, pprintDelab, pprintNoDelab
@@ -15,7 +17,20 @@ module Idris.Delaborate (
 
 import Util.Pretty
 
-import Idris.AbsSyntax
+import Idris.AbsSyntax (isMetavarName, isPostulateName)
+import Idris.AbsSyntaxTree
+  ( PTerm(..), PDo'(..), PArg, PArg'(..), ArgOpt(..), getExps
+  , Plicity(..), Static(..), pexp, constraint, tacimpl, expl
+  , basename
+  , IState(..), ppOptionIst
+  , PPOption(ppopt_impl)
+  , IOption(..)
+  , showName, prettyIst
+  , pprintPTerm
+  , namesIn
+  , unitTy, unitCon, pairTy, pairCon, sigmaTy, sigmaCon
+  , PunInfo(..)
+  )
 import Idris.Core.TT
 import Idris.Core.Evaluate
 import Idris.Docstrings (overview, renderDocstring, renderDocTerm)
@@ -25,12 +40,10 @@ import Prelude hiding ((<$>))
 
 import Data.Generics.Uniplate.Data (transform)
 import Data.Maybe (mapMaybe)
-import Data.List (intersperse, nub)
+import Data.List (nub)
 import qualified Data.Text as T
 import Control.Applicative (Alternative((<|>)))
 import Control.Monad.State
-
-import Debug.Trace
 
 bugaddr = "https://github.com/idris-lang/Idris-dev/issues"
 
@@ -112,7 +125,7 @@ delabTy' :: IState -> [PArg] -- ^ implicit arguments to type, if any
 delabTy' ist imps tm fullname mvs docases = de [] imps tm
   where
     un = fileFC "(val)"
-    
+
     -- Special case for spotting applications of case functions
     -- (Normally the scrutinee is let-bound, but hole types get normalised,
     -- so they could appear in this form. The scrutinee is always added as
