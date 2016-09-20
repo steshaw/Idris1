@@ -5,6 +5,7 @@ Copyright   :
 License     : BSD3
 Maintainer  : The Idris Community.
 -}
+
 module Idris.Chaser(
     buildTree, getImports
   , getModuleFiles
@@ -14,20 +15,20 @@ module Idris.Chaser(
 import Idris.Core.TT
 import Idris.Parser
 import Idris.AbsSyntax
+  ( getIState, valIBCSubDir, allSourceDirs, allImportDirs
+  , runIO, logLvl)
+import Idris.AbsSyntaxTree (Idris)
 import Idris.Imports
 import Idris.Unlit
 import Idris.Error
-import Idris.IBC
 
-import System.FilePath
 import System.Directory
 import Data.Time.Clock
 import Control.Monad.Trans
 import Control.Monad.State
 import Data.List
 
-import Debug.Trace
-import Util.System (readSource, writeSource)
+import Util.System (readSource)
 
 data ModuleTree = MTree { mod_path :: IFileType,
                           mod_needsRecheck :: Bool,
