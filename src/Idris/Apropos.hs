@@ -7,6 +7,7 @@ Maintainer  : The Idris Community.
 -}
 
 {-# OPTIONS_GHC -Wall -fwarn-tabs #-}
+{-# OPTIONS_GHC -fno-warn-unused-top-binds #-} -- FIXME: Remove
 
 module Idris.Apropos (apropos, aproposModules) where
 
@@ -14,7 +15,7 @@ import Idris.AbsSyntaxTree
   ( IState(..)
   , unitTy, unitCon, pairTy, pairCon, eqTy, eqCon, sigmaTy, sigmaCon)
 import Idris.Core.Evaluate (ctxtAlist, Def(..))
-import Idris.Core.TT (Name(..), TT(..), NameType(..), Binder(..), Const(..), toAlist)
+import Idris.Core.TT (Name(..), TT(..), Type, NameType(..), Binder(..), Const(..), toAlist)
 import Idris.Docstrings (Docstring, DocTerm, containsText)
 
 import Data.List (nub, nubBy, intersperse)
@@ -109,8 +110,8 @@ instance (Apropos a) => Apropos [a] where
   isApropos str xs = any (isApropos str) xs
 
 -- XXX: Unused.
--- defType :: Def -> Type
--- defType (Function t _) = t
--- defType (TyDecl _ t) = t
--- defType (Operator t _ _) = t
--- defType (CaseOp _ t _ _ _ _) = t
+defType :: Def -> Type
+defType (Function t _) = t
+defType (TyDecl _ t) = t
+defType (Operator t _ _) = t
+defType (CaseOp _ t _ _ _ _) = t
