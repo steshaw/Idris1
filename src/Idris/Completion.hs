@@ -5,6 +5,7 @@ Copyright   :
 License     : BSD3
 Maintainer  : The Idris Community.
 -}
+
 module Idris.Completion (replCompletion, proverCompletion) where
 
 import Idris.Core.Evaluate (definitions, ctxtAlist)
