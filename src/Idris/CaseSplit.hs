@@ -18,11 +18,12 @@ names over '_', patterns over names, etc.
 -}
 
 {-# LANGUAGE PatternGuards #-}
+
 {-# OPTIONS_GHC -Wall -fwarn-tabs #-}
-{-# OPTIONS_GHC -Wno-unused-matches #-} -- FIXME: Remove.
-{-# OPTIONS_GHC -Wno-name-shadowing #-} -- FIXME: Remove.
-{-# OPTIONS_GHC -Wno-missing-signatures #-} -- FIXME: Remove.
-{-# OPTIONS_GHC -Wno-type-defaults #-} -- FIXME: Remove.
+{-# OPTIONS_GHC -fno-warn-unused-matches #-} -- FIXME: Remove.
+{-# OPTIONS_GHC -fno-warn-name-shadowing #-} -- FIXME: Remove.
+{-# OPTIONS_GHC -fno-warn-missing-signatures #-} -- FIXME: Remove.
+{-# OPTIONS_GHC -fno-warn-type-defaults #-} -- FIXME: Remove.
 
 module Idris.CaseSplit(
     splitOnLine, replaceSplits
