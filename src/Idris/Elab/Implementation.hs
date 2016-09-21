@@ -1,61 +1,65 @@
 {-|
 Module      : Idris.Elab.Implementation
-Description : Code to elaborate instances.
+Description : Code to elaborate implementations.
 Copyright   :
 License     : BSD3
 Maintainer  : The Idris Community.
 -}
+
 {-# LANGUAGE PatternGuards #-}
+
 module Idris.Elab.Implementation(elabImplementation) where
 
 import Idris.AbsSyntax
-import Idris.ASTUtils
-import Idris.DSL
+  ( getIState, updateIState, putIState, getContext, setContext
+  , namesIn
+  , addImpl, addImplementation, addOpenImpl, setOpenImpl, addIBC
+  , addUsingConstraints, implicit, matchClause
+  , push_estack, pop_estack
+  , expandParamsD
+  , logElab
+  , substMatchesShadow, mkUniqueNames
+  )
+import Idris.AbsSyntaxTree
+  ( PTerm(..), PDecl, PDecl'(..), PClause'(..), PArg'(..)
+  , SyntaxInfo, FnOpts, FnOpt(..), Plicity(..)
+  , pexp, pimp
+  , expl, expl_param, impl, constraint
+  , piBindp, allNamesIn
+  , defined
+  , initEState
+  , Idris, IState(..)
+  , InterfaceInfo(..)
+  , ElabInfo(..)
+  , ElabWhat(..)
+  , IBCWrite(..)
+  , showTmImpls, showDeclImp, verbosePPOption
+  )
 import Idris.Error
 import Idris.Delaborate
-import Idris.Imports
-import Idris.Coverage
-import Idris.DataOpts
-import Idris.Providers
-import Idris.Primitives
-import Idris.Inliner
-import Idris.PartialEval
-import Idris.DeepSeq
-import Idris.Output (iputStrLn, pshow, iWarn, sendHighlighting)
-import IRTS.Lang
+import Idris.Output (iWarn, sendHighlighting)
 
 import Idris.Elab.Type
-import Idris.Elab.Data
 import Idris.Elab.Utils
 import Idris.Elab.Term
 
 import Idris.Core.TT
 import Idris.Core.Elaborate hiding (Tactic(..))
 import Idris.Core.Evaluate
-import Idris.Core.Execute
-import Idris.Core.Typecheck
 import Idris.Core.CaseTree
 
 import Idris.Docstrings
 
 import Prelude hiding (id, (.))
 import Control.Category
-
-import Control.Applicative hiding (Const)
-import Control.DeepSeq
 import Control.Monad
-import Control.Monad.State.Strict as State
 import Data.List
 import Data.Maybe
-import Debug.Trace
 
-import qualified Data.Map as Map
-import qualified Data.Set as S
 import qualified Data.Text as T
-import Data.Char(isLetter, toLower)
-import Data.List.Split (splitOn)
 
-import Util.Pretty(pretty, text)
+import Util.Pretty (text)
+
 
 elabImplementation :: ElabInfo
                    -> SyntaxInfo
