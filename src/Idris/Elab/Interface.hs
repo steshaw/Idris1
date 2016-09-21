@@ -12,6 +12,29 @@ Maintainer  : The Idris Community.
 module Idris.Elab.Interface(elabInterface) where
 
 import Idris.AbsSyntax
+  ( getIState
+  , namesIn
+  , addImplementation, addIBC
+  , implicit', addInterface
+  , setInjectivity
+  , logElab
+  , addToUsing
+  )
+import Idris.AbsSyntaxTree
+  ( PTerm(..), PDecl, PDecl'(..), PClause'(..), PData'(..)
+  , SyntaxInfo(..), FnOpts, FnOpt(..), Plicity(..), Static(..)
+  , mapPT
+  , expandNS
+  , pexp, pimp, pconst
+  , expl, impl, constraint
+  , basename
+  , Idris, IState(..)
+  , InterfaceInfo(..)
+  , ElabInfo(..)
+  , ElabWhat(..)
+  , IBCWrite(..)
+  , showTmImpls, showDImp, verbosePPOption
+  )
 import Idris.Error
 import Idris.Output (sendHighlighting)
 
