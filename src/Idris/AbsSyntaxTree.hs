@@ -2246,13 +2246,14 @@ showCImp ppo (PWith _ n l ws r pn w)
 
 
 showDImp :: PPOption -> PData -> Doc OutputAnnotation
-showDImp ppo (PDatadecl n nfc ty cons)
+showDImp ppo (PDatadecl n _ ty cons)
  = text "data" <+> text (show n) <+> colon <+> prettyImp ppo ty <+> text "where" <$>
     (indent 2 $ vsep (map (\ (_, _, n, _, t, _, _) -> pipe <+> prettyName True False [] n <+> colon <+> prettyImp ppo t) cons))
 
 showDecls :: PPOption -> [PDecl] -> Doc OutputAnnotation
 showDecls o ds = vsep (map (showDeclImp o) ds)
 
+showDeclImp :: PPOption -> PDecl -> Doc OutputAnnotation
 showDeclImp _ (PFix _ f ops)        = text (show f) <+> cat (punctuate (text ",") (map text ops))
 showDeclImp o (PTy _ _ _ _ _ n _ t) = text "tydecl" <+> text (showCG n) <+> colon <+> prettyImp o t
 showDeclImp o (PClauses _ _ n cs)   = text "pat" <+> text (showCG n) <+> text "\t" <+>
@@ -2264,7 +2265,7 @@ showDeclImp o (PNamespace n fc ps)  = text "namespace" <+> text n <> braces (lin
 showDeclImp _ (PSyntax _ syn) = text "syntax" <+> text (show syn)
 showDeclImp o (PInterface _ _ _ cs n _ ps _ _ ds _ _)
    = text "interface" <+> text (show cs) <+> text (show n) <+> text (show ps) <> line <> showDecls o ds
-showDeclImp o (PImplementation _ _ _ _ cs _ acc _ n _ _ _ t _ ds)
+showDeclImp o (PImplementation _ _ _ _ cs _ _ _ n _ _ _ t _ ds)
    = text "implementation" <+> text (show cs) <+> text (show n) <+> prettyImp o t <> line <> showDecls o ds
 showDeclImp _ _ = text "..."
 -- showDeclImp (PImport o) = "import " ++ o

@@ -11,7 +11,28 @@ Maintainer  : The Idris Community.
 module Idris.Elab.Data(elabData) where
 
 import Idris.AbsSyntax
+  ( getIState, putIState, getContext, updateContext
+  , typeInType
+  , checkUndefined, isUndefined
+  , getName, addIBC, totcheck, addDocStr, addConstraints
+  , solveDeferred
+  , logElab
+  )
+import Idris.AbsSyntaxTree
+  ( PTerm(..), PDecl'(..), PArg, PArg'(..), PData, PData'(..), PClause, FnOpt(..)
+  , SyntaxInfo(..), defaultSyntax
+  , Plicity(..), expl
+  , boundNamesIn, pexp
+  , showTmImpls, showDeclImp, verbosePPOption
+  , Idris, IState(..)
+  , ElabInfo(..)
+  , ElabWhat(..)
+  , IBCWrite(..)
+  )
 import Idris.ASTUtils
+  ( fputState
+  , opt_inaccessible, ist_optimisation
+  )
 import Idris.Error
 import Idris.Delaborate
 import Idris.Output (iWarn, sendHighlighting)
