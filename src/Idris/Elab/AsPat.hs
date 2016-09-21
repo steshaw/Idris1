@@ -5,12 +5,16 @@ Copyright   :
 License     : BSD3
 Maintainer  : The Idris Community.
 -}
+
+{-# OPTIONS_GHC -Wall -fwarn-tabs #-}
+
 module Idris.Elab.AsPat(desugarAs) where
 
 import Idris.Core.TT
-import Idris.AbsSyntax
+import Idris.AbsSyntaxTree (PTerm(..), PArg'(..), PAltType(..))
 
-import Control.Applicative
+import Prelude hiding ((<$>))
+import Control.Applicative ((<$>))
 import Control.Monad.State.Strict
 
 import Data.Generics.Uniplate.Data (transformM)
@@ -22,9 +26,9 @@ desugarAs lhs rhs
           (lhs', bindPats pats rhs)
   where
     bindPats :: [(Name, FC, PTerm)] -> PTerm -> PTerm
-    bindPats [] rhs = rhs
-    bindPats ((n, fc, tm) : ps) rhs
-       = PLet fc n NoFC Placeholder tm (bindPats ps rhs)
+    bindPats [] rhs' = rhs'
+    bindPats ((n, fc, tm) : ps) rhs'
+       = PLet fc n NoFC Placeholder tm (bindPats ps rhs')
 
 collectAs :: PTerm -> State [(Name, FC, PTerm)] PTerm
 collectAs (PAs fc n tm) = do tm' <- collectAs tm
@@ -37,7 +41,7 @@ collectAs (PApp fc t as)
          return (PApp fc t as') -- only valid on args
 -- only for 'ExactlyOne' since it means the alternatives will have the
 -- same form, so we can assume we only need to extract from the first one
-collectAs tm@(PAlternative ns (ExactlyOne d) (a : as))
+collectAs (PAlternative ns (ExactlyOne d) (a : as))
     = do a' <- collectAs a
          pats <- get
          as' <- mapM collectAs as -- just to drop the '@'
@@ -51,13 +55,12 @@ replaceUnderscore :: PTerm -> PTerm
 replaceUnderscore tm = evalState (transformM (underAs replaceUnderscore') tm) 0
   where
     underAs :: (PTerm -> State Int PTerm) -> PTerm -> State Int PTerm
-    underAs f (PAs fc n tm) = PAs fc n <$> transformM f tm
-    underAs f x = return x
+    underAs f (PAs fc n tm') = PAs fc n <$> transformM f tm'
+    underAs _ x = return x
 
     fresh :: State Int Name
     fresh = modify (+1) >> flip sMN "underscorePatVar" <$> get
 
-
     replaceUnderscore' :: PTerm -> State Int PTerm
     replaceUnderscore' Placeholder = PRef emptyFC [] <$> fresh
-    replaceUnderscore' tm          = return tm
+    replaceUnderscore' tm'         = return tm'

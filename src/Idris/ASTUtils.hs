@@ -45,7 +45,7 @@ module Idris.ASTUtils(
   ) where
 
 import Control.Category
-import Control.Monad.State.Class
+import Control.Monad.State.Class (MonadState, gets, modify)
 import Data.Maybe
 import Prelude hiding (id, (.))
 
@@ -151,8 +151,8 @@ known_terms = Field (definitions . tt_ctxt)
                     (\v state -> state {tt_ctxt = (tt_ctxt state) {definitions = v}})
 
 known_interfaces :: Field IState (Ctxt InterfaceInfo)
+-- FIXME: Unused `v` here. Is this a bug?
 known_interfaces = Field idris_interfaces (\v state -> state {idris_interfaces = idris_interfaces state})
-
 
 -- | Names defined at the repl
 repl_definitions :: Field IState [Name]

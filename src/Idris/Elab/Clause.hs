@@ -5,26 +5,57 @@ Copyright   :
 License     : BSD3
 Maintainer  : The Idris Community.
 -}
+
 {-# LANGUAGE PatternGuards #-}
+{-# OPTIONS_GHC -Wall -fwarn-tabs #-}
+
 module Idris.Elab.Clause where
 
 import Idris.AbsSyntax
+  ( getIState, putIState, updateIState, getContext, setContext
+  , getOptimise, getErasureInfo, getAllNames, coverage, getFromHideList
+  , isTyInferred, useREPL, typeInType
+  , addDefinedName, setTotality, totcheck, defer_totcheck, addCalls, matchClause
+  , addImpl, addImplPat, addImplBound, addImplBoundInf
+  , addDeferred, addConstraints
+  , addErrRev
+  , push_estack, pop_estack, addTyInfConstraints, addInternalApp
+  , expandImplementationScope, expandParams, expandParamsD
+  , getName
+  , logElab
+  , solveDeferred, addIBC, stripUnmatchable, stripLinear, setAccessibility
+  , setFlags
+  , substMatches
+  )
+import Idris.AbsSyntaxTree
+  ( PTerm(..), PDecl, PDecl'(..), PClause, PClause'(..)
+  , PArg, PArg'(..), FnOpts, FnOpt(..), inlinable, dictionary
+  , mapPT, pexp, pimp, eqTy, eqCon, allNamesIn, infP, infTerm, getInferTerm, getInferType
+  , declared, defined
+  , Optimisation(..)
+  , IBCWrite(..)
+  , ElabInfo(..)
+  , ElabWhat(..)
+  , EState(..), initEState
+  , Idris, IState(..)
+  , opt_typecase
+  , showTmImpls
+  , defaultSyntax
+  , usedNamesIn
+  )
 import Idris.ASTUtils
-import Idris.DSL
+  ( fgetState, fmodifyState
+  , opt_inaccessible, ist_optimisation
+  )
 import Idris.Error
 import Idris.Delaborate
-import Idris.Imports
 import Idris.Elab.Term
 import Idris.Coverage
 import Idris.DataOpts
-import Idris.Providers
-import Idris.Primitives
 import Idris.Inliner
 import Idris.PartialEval
 import Idris.Transforms
-import Idris.DeepSeq
-import Idris.Output (iputStrLn, pshow, iWarn, iRenderResult, sendHighlighting)
-import IRTS.Lang
+import Idris.Output (iputStrLn, pshow, sendHighlighting)
 
 import Idris.Elab.AsPat
 import Idris.Elab.Type
@@ -34,9 +65,8 @@ import Idris.Elab.Utils
 import Idris.Core.TT
 import Idris.Core.Elaborate hiding (Tactic(..))
 import Idris.Core.Evaluate
-import Idris.Core.Execute
-import Idris.Core.Typecheck
 import Idris.Core.CaseTree
+import Idris.Core.Typecheck
 
 import Idris.Docstrings hiding (Unchecked)
 import Util.Pretty hiding ((<$>))
@@ -454,7 +484,7 @@ elabPE info fc caller r =
                           i <- getIState
                           let statics = filter (staticFn i) ns
                           return (map (\n -> (n, Nothing)) statics)
-        
+
     staticFn :: IState -> Name -> Bool
     staticFn i n =  case lookupCtxt n (idris_flags i) of
                             [opts] -> elem StaticFn opts
