@@ -5,30 +5,14 @@ Copyright   :
 License     : BSD3
 Maintainer  : The Idris Community.
 -}
-{-# LANGUAGE CPP #-}
+
+{-# OPTIONS_GHC -Wall #-}
+{-# LANGUAGE NoImplicitPrelude #-}
+
 module Idris.Package where
 
-import System.Process
-import System.Directory
-import System.Exit
-import System.IO
-import System.FilePath ((</>), addTrailingPathSeparator, takeFileName,
-                        takeDirectory, normalise, addExtension, hasExtension)
-import System.Directory (createDirectoryIfMissing, copyFile)
-
-import Util.System
-
-import Control.Monad
-import Control.Monad.Trans.State.Strict (execStateT)
-import Control.Monad.Trans.Except (runExceptT)
-
-import Data.List
-import Data.List.Split(splitOn)
-import Data.Maybe(fromMaybe)
-import Data.Either(partitionEithers)
-
+import Idris.Prelude hiding (mod)
 import Idris.Core.TT
-import Idris.REPL
 import Idris.Parser (loadModule)
 import Idris.Output (pshow)
 import Idris.AbsSyntax
@@ -39,10 +23,28 @@ import Idris.Imports
 import Idris.Error (ifail)
 import Idris.Main (idrisMain, idris)
 
-import Idris.Package.Common
-import Idris.Package.Parser
+import Idris.Package.Common (PkgDesc(..))
+import Idris.Package.Parser (parseDesc)
 
 import IRTS.System
+
+import Util.System
+
+import Control.Monad
+import Control.Monad.Trans.State.Strict (execStateT)
+import Control.Monad.Trans.Except (runExceptT)
+
+import Data.List
+import Data.List.Split(splitOn)
+import Data.Either(partitionEithers)
+
+import System.Process
+import System.Directory
+import System.Exit
+import System.IO
+import System.FilePath ((</>), addTrailingPathSeparator, takeFileName,
+                        takeDirectory, addExtension, hasExtension)
+import System.Directory (createDirectoryIfMissing, copyFile)
 
 -- To build a package:
 -- * read the package description
@@ -170,7 +172,7 @@ replPkg copts fp = do
 cleanPkg :: [Opt]    -- ^ Command line options.
          -> FilePath -- ^ Path to ipkg file.
          -> IO ()
-cleanPkg copts fp = do
+cleanPkg _ fp = do
   pkgdesc <- parseDesc fp
   dir <- getCurrentDirectory
   inPkgDir pkgdesc $ do
@@ -211,7 +213,7 @@ documentPkg copts fp = do
     Right opts -> do
       let run l       = runExceptT . execStateT l
           load []     = return ()
-          load (f:fs) = do loadModule f IBC_Building; load fs
+          load (m:ms) = do _ <- loadModule m IBC_Building; load ms
           loader      = do
             idrisMain opts
             addImportDir (sourcedir pkgdesc)
@@ -262,7 +264,7 @@ testPkg copts fp = do
           exitWith (ExitFailure 1)
         Right opts -> do
           m_ist <- idris opts
-          rawSystem tmpn' []
+          _ <- rawSystem tmpn' [] -- XXX: Ignoring exit code.
           return m_ist
     case m_ist of
       Nothing  -> exitWith (ExitFailure 1)
@@ -287,7 +289,7 @@ installPkg altdests pkgdesc = inPkgDir pkgdesc $ do
     Nothing -> do
       mapM_ (installIBC destdir (pkgname pkgdesc)) (modules pkgdesc)
       installIdx destdir (pkgname pkgdesc)
-    Just o -> return () -- do nothing, keep executable locally, for noe
+    Just _ -> return () -- do nothing, keep executable locally, for noe
 
   mapM_ (installObj destdir (pkgname pkgdesc)) (objs pkgdesc)
 
@@ -330,8 +332,12 @@ rmExe p = do
                                 then addExtension p ".exe" else p
             rmFile fn
 
-toIBCFile (UN n) = str n ++ ".ibc"
-toIBCFile (NS n ns) = foldl1' (</>) (reverse (toIBCFile n : map str ns))
+toIBCFile :: Name -> FilePath
+toIBCFile (UN n)       = str n ++ ".ibc"
+toIBCFile (NS n ns)    = foldl1' (</>) (reverse (toIBCFile n : map str ns))
+toIBCFile n@(MN _ _)   = error $ "Impossible! Cannot convert machine generated name to module file: " ++ show n
+toIBCFile n@(SN _)     = error $ "Impossible! Cannot convert special name to module file: " ++ show n
+toIBCFile n@(SymRef _) = error $ "Impossible! Cannot convert symbol-reference name to module file: " ++ show n
 
 installIBC :: String -> String -> Name -> IO ()
 installIBC dest p m = do
@@ -342,8 +348,12 @@ installIBC dest p m = do
     copyFile f (destdir </> takeFileName f)
     return ()
   where
-    getDest (UN n) = ""
-    getDest (NS n ns) = foldl1' (</>) (reverse (getDest n : map str ns))
+    getDest :: Name -> FilePath
+    getDest (UN _)       = ""
+    getDest (NS n ns)    = foldl1' (</>) (reverse (getDest n : map str ns))
+    getDest n@(MN _ _)   = error $ "Impossible! Cannot get destination of machine generated name: " ++ show n
+    getDest n@(SN _)     = error $ "Impossible! Cannot get destination of special name: " ++ show n
+    getDest n@(SymRef _) = error $ "Impossible! Cannot get destination of symbol-reference name: " ++ show n
 
 installIdx :: String -> String -> IO ()
 installIdx dest p = do
@@ -362,12 +372,6 @@ installObj dest p o = do
   copyFile o (destdir </> takeFileName o)
   return ()
 
-#ifdef mingw32_HOST_OS
-mkDirCmd = "mkdir "
-#else
-mkDirCmd = "mkdir -p "
-#endif
-
 inPkgDir :: PkgDesc -> IO a -> IO a
 inPkgDir pkgdesc action =
   do dir <- getCurrentDirectory
@@ -384,13 +388,13 @@ inPkgDir pkgdesc action =
 -- | Invoke a Makefile's default target.
 make :: Maybe String -> IO ()
 make Nothing = return ()
-make (Just s) = do rawSystem "make" ["-f", s]
+make (Just s) = do _ <- rawSystem "make" ["-f", s] -- XXX: Ignoring exit code.
                    return ()
 
 -- | Invoke a Makefile's clean target.
 clean :: Maybe String -> IO ()
 clean Nothing = return ()
-clean (Just s) = do rawSystem "make" ["-f", s, "clean"]
+clean (Just s) = do _ <- rawSystem "make" ["-f", s, "clean"] -- XXX: Ignoring exit code.
                     return ()
 
 -- | Merge an option list representing the command line options into

@@ -4,11 +4,25 @@ Description : Common utilities used by all modes.
 License     : BSD3
 Maintainer  : The Idris Community.
 -}
+
+{-# OPTIONS_GHC -Wall #-}
+{-# LANGUAGE NoImplicitPrelude #-}
+
 module Idris.ModeCommon where
 
-
+import Idris.Prelude
 import Idris.AbsSyntax
-import Idris.Erasure
+  ( getIState, putIState, runIO, logParser
+  , getCmdLine, noErrors, valIBCSubDir
+  , setErrSpan
+  , opt
+  , getOutput
+  )
+import Idris.AbsSyntaxTree
+  ( Idris, IState(errSpan, idris_tyinfodata, idris_patdefs)
+  , Opt(NoREPL)
+  )
+import Idris.Erasure (performUsageAnalysis)
 import Idris.Error
 import Idris.IBC
 import Idris.Delaborate
@@ -19,22 +33,19 @@ import Idris.Output
 import Idris.Info
 import Idris.Core.TT
 
-import IRTS.Exports
+import IRTS.Exports (findExports, getExpNames)
 
-import Control.Category
-import Prelude hiding ((<$>), (.), id)
-
-import System.Directory
-import Control.Monad
+import Control.Monad (when)
 import Control.Monad.Trans.State.Strict (get)
-import Network.Socket (PortNumber)
-import Data.Maybe
+import Control.DeepSeq (($!!))
+import Data.Maybe (mapMaybe)
 import Data.List hiding (group)
-import Control.DeepSeq
+import Network.Socket (PortNumber)
+import System.Directory (doesFileExist)
 
 
 defaultPort :: PortNumber
-defaultPort = fromIntegral 4294
+defaultPort = 4294
 
 
 loadInputs :: [FilePath] -> Maybe Int -> Idris [FilePath]
@@ -68,8 +79,8 @@ loadInputs inputs toline -- furthest line to read in input source files
                    let ifiles = getModuleFiles modTree
                    logParser 1 ("MODULE TREE : " ++ show modTree)
                    logParser 1 ("RELOAD: " ++ show ifiles)
-                   when (not (all ibc ifiles) || loadCode) $
-                        tryLoad False IBC_Building (filter (not . ibc) ifiles)
+                   when (not (all isIBC ifiles) || loadCode) $
+                        tryLoad False IBC_Building (filter (not . isIBC) ifiles)
                    -- return the files that need rechecking
                    return (input, ifiles))
                       ninputs
@@ -85,7 +96,7 @@ loadInputs inputs toline -- furthest line to read in input source files
               _ -> return ()
            exports <- findExports
 
-           case opt getOutput opts of
+           _ <- case opt getOutput opts of
                [] -> performUsageAnalysis (getExpNames exports) -- interactive
                _  -> return []  -- batch, will be checked by the compiler
 
@@ -102,7 +113,7 @@ loadInputs inputs toline -- furthest line to read in input source files
                   return [])
    where -- load all files, stop if any fail
          tryLoad :: Bool -> IBCPhase -> [IFileType] -> Idris ()
-         tryLoad keepstate phase [] = warnTotality >> return ()
+         tryLoad _         _     [] = warnTotality >> return ()
          tryLoad keepstate phase (f : fs)
                  = do ist <- getIState
                       let maxline
@@ -131,14 +142,14 @@ loadInputs inputs toline -- furthest line to read in input source files
                             -- This isn't a solution - but it's a temporary stopgap.
                             -- See issue #2386
                             do when (not keepstate) $ putIState $!! ist
-                               ist <- getIState
-                               putIState $!! ist { idris_tyinfodata = tidata,
-                                                   idris_patdefs = patdefs }
+                               ist' <- getIState
+                               putIState $!! ist' { idris_tyinfodata = tidata,
+                                                    idris_patdefs = patdefs }
                                tryLoad keepstate phase fs
                           else warnTotality
 
-         ibc (IBC _ _) = True
-         ibc _ = False
+         isIBC (IBC _ _) = True
+         isIBC _ = False
 
          fmatch ('.':'/':xs) ys = fmatch xs ys
          fmatch xs ('.':'/':ys) = fmatch xs ys
@@ -160,13 +171,14 @@ loadInputs inputs toline -- furthest line to read in input source files
                                           else return Nothing
 
          -- Like mapM, but give up when there's an error
-         mapWhileOK f [] = return []
+         mapWhileOK _ [] = return []
          mapWhileOK f (x : xs) = do x' <- f x
                                     ok <- noErrors
                                     if ok then do xs' <- mapWhileOK f xs
                                                   return (x' : xs')
                                           else return [x']
 
+banner :: String
 banner = "     ____    __     _                                          \n" ++
          "    /  _/___/ /____(_)____                                     \n" ++
          "    / // __  / ___/ / ___/     Version " ++ getIdrisVersion ++ "\n" ++
@@ -176,6 +188,7 @@ banner = "     ____    __     _                                          \n" ++
          "Idris is free software with ABSOLUTELY NO WARRANTY.            \n" ++
          "For details type :warranty."
 
+warranty :: String
 warranty = "\n"                                                                          ++
            "\t THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS ``AS IS'' AND ANY  \n" ++
            "\t EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE     \n" ++

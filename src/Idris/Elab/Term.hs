@@ -11,19 +11,19 @@ Maintainer  : The Idris Community.
 
 module Idris.Elab.Term where
 
-import Idris.AbsSyntax (
-    mkUniqueNames, addImplBound, getCoercionsTo, mkPApp, logElab
-  , getIState, updateIState, getContext, updateContext, getName
-  , totcheck , addImplementation, solveDeferred, addDeferred, setTotality
+import Idris.AbsSyntax
+  ( getIState, updateIState, getContext, updateContext, getName
+  , mkUniqueNames, addImplBound, getCoercionsTo, mkPApp
+  , totcheck , addImplementation, solveDeferred, addDeferred, setTotality , addIBC
   , infTerm, infP
   , matchClause
   , addCalls
   , addImplPat
-  , addIBC
   , initEState
+  , logElab
   )
-import Idris.AbsSyntaxTree (
-    PTerm(..), PDecl, PDecl'(..), PClause, PClause'(..), PArg, PArg'(..), ArgOpt(..), PAltType(..)
+import Idris.AbsSyntaxTree
+  ( PTerm(..), PDecl, PDecl'(..), PClause, PClause'(..), PArg, PArg'(..), ArgOpt(..), PAltType(..)
   , PTactic, PTactic'(..)
   , FnOpts, FnOpt(..) , PunInfo(..), FixDecl(..)
   , showTmImpls

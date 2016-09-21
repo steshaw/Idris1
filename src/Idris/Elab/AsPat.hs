@@ -6,15 +6,15 @@ License     : BSD3
 Maintainer  : The Idris Community.
 -}
 
-{-# OPTIONS_GHC -Wall -fwarn-tabs #-}
-{-# OPTIONS_GHC -fno-warn-dodgy-imports #-}
+{-# OPTIONS_GHC -Wall #-}
+{-# LANGUAGE NoImplicitPrelude #-}
 
 module Idris.Elab.AsPat(desugarAs) where
 
+import Idris.Prelude
 import Idris.Core.TT
 import Idris.AbsSyntaxTree (PTerm(..), PArg'(..), PAltType(..))
 
-import Prelude hiding ((<$>))
 import Control.Applicative ((<$>))
 import Control.Monad.State.Strict
 

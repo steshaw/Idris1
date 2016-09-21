@@ -1,2 +1,3 @@
 :addclause 8 Show
 :addclause 10 append
+:makelemma 10 append_rhs_2

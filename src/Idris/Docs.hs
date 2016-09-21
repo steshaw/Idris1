@@ -6,8 +6,11 @@ License     : BSD3
 Maintainer  : The Idris Community.
 -}
 
-{-# LANGUAGE DeriveFunctor, PatternGuards, MultiWayIf #-}
-{-# OPTIONS_GHC -fwarn-incomplete-patterns #-}
+{-# OPTIONS_GHC -Wall #-}
+{-# LANGUAGE NoImplicitPrelude #-}
+{-# LANGUAGE DeriveFunctor #-}
+{-# LANGUAGE PatternGuards #-}
+{-# LANGUAGE MultiWayIf #-}
 
 module Idris.Docs (
     pprintDocs
@@ -15,6 +18,7 @@ module Idris.Docs (
   , FunDoc, FunDoc'(..), Docs, Docs'(..)
   ) where
 
+import Idris.Prelude hiding (mod)
 import Idris.AbsSyntax
   ( getIState
   , typeDescription, type1Doc
@@ -31,11 +35,12 @@ import Idris.AbsSyntaxTree
 import Idris.Delaborate
 import Idris.Core.TT
 import Idris.Core.Evaluate
-import Idris.Docstrings (Docstring, emptyDocstring, noDocs, nullDocstring, renderDocstring, DocTerm, renderDocTerm, overview)
+import Idris.Docstrings
+  ( Docstring, emptyDocstring, noDocs, nullDocstring, renderDocstring
+  , DocTerm, renderDocTerm, overview
+  )
 
 import Util.Pretty
-
-import Prelude hiding ((<$>))
 
 import Data.Maybe
 import Data.List
@@ -74,23 +79,24 @@ data Docs' d = FunDoc (FunDoc' d)
 
 type Docs = Docs' (Docstring DocTerm)
 
+showDoc :: IState -> Docstring DocTerm -> Doc OutputAnnotation
 showDoc ist d
   | nullDocstring d = empty
   | otherwise = text "  -- " <>
                 renderDocstring (renderDocTerm (pprintDelab ist) (normaliseAll (tt_ctxt ist) [])) d
 
 pprintFD :: IState -> Bool -> Bool -> FunDoc -> Doc OutputAnnotation
-pprintFD ist totalityFlag nsFlag (FD n doc args ty f) =
-          nest 4 (prettyName True nsFlag [] n
+pprintFD ist totalityFlag nsFlag (FD nm doc fdArgs fdTy fixity) =
+          nest 4 (prettyName True nsFlag [] nm
       <+> colon
-      <+> pprintPTerm ppo [] [ n | (n@(UN n'),_,_,_) <- args
-                             , not (T.isPrefixOf (T.pack "__") n') ] infixes ty
+      <+> pprintPTerm ppo [] [ n | (n@(UN n'),_,_,_) <- fdArgs
+                             , not (T.isPrefixOf (T.pack "__") n') ] infixes fdTy
       -- show doc
       <$> renderDocstring (renderDocTerm (pprintDelab ist) (normaliseAll (tt_ctxt ist) [])) doc
       -- show fixity
-      <$> maybe empty (\f -> text (show f) <> line) f
+      <$> maybe empty (\f -> text (show f) <> line) fixity
       -- show arguments doc
-      <> let argshow = showArgs args [] in
+      <> let argshow = showArgs fdArgs [] in
            (if not (null argshow)
              then nest 4 $ text "Arguments:" <$> vsep argshow
              else empty)
@@ -106,12 +112,12 @@ pprintFD ist totalityFlag nsFlag (FD n doc args ty f) =
       infixes = idris_infixes ist
 
       -- Recurse over and show the Function's Documented arguments
-      showArgs ((n, ty, Exp {}, Just d):args)        bnd = -- Explicitly bound.
+      showArgs ((n, ty, Exp {}, Just d):rest)        bnd = -- Explicitly bound.
             bindingOf n False
         <+> colon
         <+> pprintPTerm ppo bnd [] infixes ty
         <> showDoc ist d
-        <> line : showArgs args ((n, False):bnd)
+        <> line : showArgs rest ((n, False):bnd)
       showArgs ((n, ty, Constraint {}, Just d):args) bnd = -- Interface constraints.
             text "Interface constraint"
         <+> pprintPTerm ppo bnd [] infixes ty
@@ -135,7 +141,7 @@ pprintFD ist totalityFlag nsFlag (FD n doc args ty f) =
             showArgs args ((n, True):bnd)
       showArgs []                                    _   = [] -- end of arguments
 
-      getTotality = map (text . show) $ lookupTotal n (tt_ctxt ist)
+      getTotality = map (text . show) $ lookupTotal nm (tt_ctxt ist)
 
 pprintFDWithTotality :: IState -> Bool -> FunDoc -> Doc OutputAnnotation
 pprintFDWithTotality ist = pprintFD ist True
@@ -185,7 +191,7 @@ pprintDocs ist (InterfaceDoc n doc meths params implementations sub_interfaces s
   where
     params' = zip pNames (repeat False)
 
-    (normalImplementations, namedImplementations) = partition (\(n, _, _) -> not $ isJust n)
+    (normalImplementations, namedImplementations) = partition (\(n', _, _) -> not $ isJust n')
                                                               implementations
 
     pNames  = map fst params
@@ -193,29 +199,29 @@ pprintDocs ist (InterfaceDoc n doc meths params implementations sub_interfaces s
     ppo = ppOptionIst ist
     infixes = idris_infixes ist
 
-    pprintImplementation (mname, term, (doc, argDocs)) =
+    pprintImplementation (mname, term, (d, argDocs)) =
       nest 4 (iname mname <> dumpImplementation term <>
-              (if nullDocstring doc
+              (if nullDocstring d
                   then empty
                   else line <>
                        renderDocstring
                          (renderDocTerm
                             (pprintDelab ist)
                             (normaliseAll (tt_ctxt ist) []))
-                         doc) <>
+                         d) <>
               if null argDocs
                  then empty
                  else line <> vsep (map (prettyImplementationParam (map fst argDocs)) argDocs))
 
 
     iname Nothing = empty
-    iname (Just n) = annName n <+> colon <> space
+    iname (Just n') = annName n' <+> colon <> space
 
-    prettyImplementationParam params (name, doc) =
-      if nullDocstring doc
+    prettyImplementationParam params'' (name, doc') =
+      if nullDocstring doc'
          then empty
-         else prettyName True False (zip params (repeat False)) name <+>
-              showDoc ist doc
+         else prettyName True False (zip params'' (repeat False)) name <+>
+              showDoc ist doc'
 
 -- if any (isJust . snd) params
 -- then vsep (map (\(nm,md) -> prettyName True False params' nm <+> maybe empty (showDoc ist) md) params)
@@ -225,7 +231,7 @@ pprintDocs ist (InterfaceDoc n doc meths params implementations sub_interfaces s
     dumpImplementation = pprintPTerm ppo params' [] infixes
 
     prettifySubInterfaces (PPi (Constraint _ _) _ _ tm _)    = prettifySubInterfaces tm
-    prettifySubInterfaces (PPi plcity           nm fc t1 t2) = PPi plcity (safeHead nm pNames) NoFC (prettifySubInterfaces t1) (prettifySubInterfaces t2)
+    prettifySubInterfaces (PPi plcity           nm _ t1 t2)  = PPi plcity (safeHead nm pNames) NoFC (prettifySubInterfaces t1) (prettifySubInterfaces t2)
     prettifySubInterfaces (PApp fc ref args)                 = PApp fc ref $ updateArgs pNames args
     prettifySubInterfaces tm                                 = tm
 
@@ -239,17 +245,18 @@ pprintDocs ist (InterfaceDoc n doc meths params implementations sub_interfaces s
     updateRef nm (PRef fc _ _) = PRef fc [] nm
     updateRef _  pt          = pt
 
-    isSubInterface (PPi (Constraint _ _) _ _ (PApp _ _ args) (PApp _ (PRef _ _ nm) args')) = nm == n && map getTm args == map getTm args'
-    isSubInterface (PPi _   _            _ _ pt)                                           = isSubInterface pt
-    isSubInterface _                                                                       = False
+-- XXX: Unused
+--    isSubInterface (PPi (Constraint _ _) _ _ (PApp _ _ args) (PApp _ (PRef _ _ nm) args')) = nm == n && map getTm args == map getTm args'
+--    isSubInterface (PPi _   _            _ _ pt)                                           = isSubInterface pt
+--    isSubInterface _                                                                       = False
 
     prettyParameters =
       if any (isJust . snd) params
          then vsep (map (\(nm,md) -> prettyName True False params' nm <+> maybe empty (showDoc ist) md) params)
          else hsep (punctuate comma (map (prettyName True False params' . fst) params))
 
-pprintDocs ist (RecordDoc n doc ctor projs params)
-  = nest 4 (text "Record" <+> prettyName True (ppopt_impl ppo) [] n <>
+pprintDocs ist (RecordDoc nm doc ctor projs params)
+  = nest 4 (text "Record" <+> prettyName True (ppopt_impl ppo) [] nm <>
              if nullDocstring doc
                 then empty
                 else line <>
@@ -284,31 +291,32 @@ pprintDocs ist (ModDoc mod docs)
 
 -- | Determine a truncation function depending how much docs the user
 -- wants to see
+howMuch :: HowMuchDocs -> Docstring a -> Docstring a
 howMuch FullDocs     = id
 howMuch OverviewDocs = overview
 
 -- | Given a fully-qualified, disambiguated name, construct the
 -- documentation object for it
 getDocs :: Name -> HowMuchDocs -> Idris Docs
-getDocs n@(NS n' ns) w | n' == modDocName
+getDocs nm@(NS n' ns) w | n' == modDocName
    = do i <- getIState
-        case lookupCtxtExact n (idris_moduledocs i) of
+        case lookupCtxtExact nm (idris_moduledocs i) of
           Just doc -> return . ModDoc (reverse (map T.unpack ns)) $ howMuch w doc
           Nothing  -> fail $ "Module docs for " ++ show (reverse (map T.unpack ns)) ++
                              " do not exist! This shouldn't have happened and is a bug."
-getDocs n w
+getDocs nm w
    = do i <- getIState
-        docs <- if | Just ci <- lookupCtxtExact n (idris_interfaces i)
-                     -> docInterface n ci
-                   | Just ri <- lookupCtxtExact n (idris_records i)
-                     -> docRecord n ri
-                   | Just ti <- lookupCtxtExact n (idris_datatypes i)
-                     -> docData n ti
-                   | Just interface_ <- interfaceNameForImpl i n
-                     -> do fd <- docFun n
+        docs <- if | Just ci <- lookupCtxtExact nm (idris_interfaces i)
+                     -> docInterface nm ci
+                   | Just ri <- lookupCtxtExact nm (idris_records i)
+                     -> docRecord nm ri
+                   | Just ti <- lookupCtxtExact nm (idris_datatypes i)
+                     -> docData nm ti
+                   | Just interface_ <- interfaceNameForImpl i nm
+                     -> do fd <- docFun nm
                            return $ NamedImplementationDoc interface_ fd
                    | otherwise
-                     -> do fd <- docFun n
+                     -> do fd <- docFun nm
                            return (FunDoc fd)
         return $ fmap (howMuch w) docs
   where interfaceNameForImpl :: IState -> Name -> Maybe Name
@@ -325,9 +333,9 @@ docData n ti
        return (DataDoc tdoc cdocs)
 
 docInterface :: Name -> InterfaceInfo -> Idris Docs
-docInterface n ci
+docInterface nm ci
   = do i <- getIState
-       let docStrings = listToMaybe $ lookupCtxt n $ idris_docstrings i
+       let docStrings = listToMaybe $ lookupCtxt nm $ idris_docstrings i
            docstr = maybe emptyDocstring fst docStrings
            params = map (\pn -> (pn, docStrings >>= (lookup pn . snd)))
                         (interface_params ci)
@@ -346,7 +354,7 @@ docInterface n ci
                      SN _ -> return Nothing
                      _    -> fmap Just $ docFun ctorN
        return $ InterfaceDoc
-                  n docstr mdocs params
+                  nm docstr mdocs params
                   implementations' (map (\(_,tm,_) -> tm) sub_interfaces) super_interfaces
                   ctorDocs
   where
@@ -357,8 +365,8 @@ docInterface n ci
     getDImpl (PImplementation _ _ _ _ _ _ _ _ _ _ _ _ t _ _) = Just t
     getDImpl _                                         = Nothing
 
-    isSubInterface (PPi (Constraint _ _) _ _ (PApp _ _ args) (PApp _ (PRef _ _ nm) args'))
-      = nm == n && map getTm args == map getTm args'
+    isSubInterface (PPi (Constraint _ _) _ _ (PApp _ _ args) (PApp _ (PRef _ _ n) args'))
+      = n == nm && map getTm args == map getTm args'
     isSubInterface (PPi _ _ _ _ pt)
       = isSubInterface pt
     isSubInterface _
@@ -391,9 +399,9 @@ docFun n
 
        return (FD n docstr args ty f)
        where funName :: Name -> String
-             funName (UN n)   = str n
-             funName (NS n _) = funName n
-             funName n        = show n
+             funName (UN n')   = str n'
+             funName (NS n' _) = funName n'
+             funName n'        = show n'
 
 getPArgNames :: PTerm -> [(Name, Docstring DocTerm)] -> [(Name, PTerm, Plicity, Maybe (Docstring DocTerm))]
 getPArgNames (PPi plicity name _ ty body) ds =
@@ -401,10 +409,10 @@ getPArgNames (PPi plicity name _ ty body) ds =
 getPArgNames _ _ = []
 
 pprintConstDocs :: IState -> Const -> String -> Doc OutputAnnotation
-pprintConstDocs ist c str = text "Primitive" <+> text (if constIsType c then "type" else "value") <+>
-                            pprintPTerm (ppOptionIst ist) [] [] [] (PConstant NoFC c) <+> colon <+>
-                            pprintPTerm (ppOptionIst ist) [] [] [] (t c) <>
-                            nest 4 (line <> text str)
+pprintConstDocs ist c s = text "Primitive" <+> text (if constIsType c then "type" else "value") <+>
+                          pprintPTerm (ppOptionIst ist) [] [] [] (PConstant NoFC c) <+> colon <+>
+                          pprintPTerm (ppOptionIst ist) [] [] [] (t c) <>
+                          nest 4 (line <> text s)
 
   where t (Fl _)  = PConstant NoFC $ AType ATFloat
         t (BI _)  = PConstant NoFC $ AType (ATInt ITBig)

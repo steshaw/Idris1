@@ -6,14 +6,16 @@ License     : BSD3
 Maintainer  : The Idris Community.
 -}
 
+{-# OPTIONS_GHC -Wall #-}
+{-# LANGUAGE NoImplicitPrelude #-}
 {-# LANGUAGE PatternGuards #-}
 
 module Idris.DataOpts(applyOpts) where
 
+import Idris.Prelude hiding (mod)
 import Idris.AbsSyntaxTree (Idris)
 import Idris.Core.TT hiding (arity)
 
-import Prelude hiding ((<$>), mod)
 import Control.Applicative
 import qualified Data.Text as T
 

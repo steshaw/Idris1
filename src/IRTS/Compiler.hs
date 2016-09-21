@@ -6,11 +6,13 @@ License     : BSD3
 Maintainer  : The Idris Community.
 -}
 
+{-# LANGUAGE NoImplicitPrelude #-}
 {-# LANGUAGE PatternGuards #-}
 {-# LANGUAGE TypeSynonymInstances #-}
 
 module IRTS.Compiler(compile, generate) where
 
+import Idris.Prelude hiding ((.), id)
 import IRTS.Lang
 import IRTS.LangOpts
 import IRTS.Defunctionalise
@@ -43,8 +45,6 @@ import Idris.Output
 import Idris.Core.TT
 import Idris.Core.Evaluate
 import Idris.Core.CaseTree
-
-import Prelude hiding (id, (.), Applicative(..))
 
 import Control.Category
 import Control.Applicative

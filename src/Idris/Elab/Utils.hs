@@ -5,12 +5,35 @@ Copyright   :
 License     : BSD3
 Maintainer  : The Idris Community.
 -}
+
 {-# LANGUAGE PatternGuards #-}
+
 module Idris.Elab.Utils where
 
 import Idris.AbsSyntax
+  ( getIState, putIState, getContext
+  , typeInType, getDeprecated, getFragile
+  , addConstraints, addIBC, addDeferred
+  , setFlags
+  , matchClause'
+  , getFromHideList
+  , logElab
+  )
+import Idris.AbsSyntaxTree
+  ( PTerm(..), PDecl, PDecl'(..), PArg, PArg'(..)
+  , ArgOpt(..), Plicity(..)
+  , PClause'(..), FnOpts, FnOpt(..), FnInfo(..), Static(..)
+  , pimp
+  , Idris, IState(..)
+  , ElabInfo(..)
+  , ElabD
+  , EState(..)
+  , ElabWhat(..)
+  , OptInfo(..)
+  , IBCWrite(..)
+  , showTmImpls
+  )
 import Idris.Error
-import Idris.DeepSeq
 import Idris.Delaborate
 import Idris.Docstrings
 import Idris.Output
@@ -22,14 +45,9 @@ import Idris.Core.Typecheck
 
 import Util.Pretty
 
-import Control.Applicative hiding (Const)
 import Control.Monad.State
-import Control.Monad
 import Data.List
 import Data.Maybe
-import qualified Data.Traversable as Traversable
-
-import Debug.Trace
 
 import qualified Data.Map as Map
 
@@ -37,7 +55,7 @@ recheckC = recheckC_borrowing False True []
 
 recheckC_borrowing uniq_check addConstrs bs tcns fc mkerr env t
     = do -- t' <- applyOpts (forget t) (doesn't work, or speed things up...)
-         
+
          ctxt <- getContext
          t' <- case safeForget t of
                     Just ft -> return ft
@@ -47,7 +65,7 @@ recheckC_borrowing uniq_check addConstrs bs tcns fc mkerr env t
                                    OK x -> return x
          logElab 6 $ "CONSTRAINTS ADDED: " ++ show (tm, ty, cs)
          tit <- typeInType
-         when (not tit && addConstrs) $ 
+         when (not tit && addConstrs) $
                            do addConstraints fc cs
                               mapM_ (\c -> addIBC (IBCConstraint fc c)) (snd cs)
          mapM_ (checkDeprecated fc) (allTTNames tm)
@@ -539,10 +557,7 @@ liftPats tm = let (tm', ps) = runState (getPats tm) [] in
                                       sc' <- getPats sc
                                       return (Bind n (Hole t') sc')
 
-
     getPats (App s f a) = do f' <- getPats f
                              a' <- getPats a
                              return (App s f' a')
     getPats t = return t
-
-

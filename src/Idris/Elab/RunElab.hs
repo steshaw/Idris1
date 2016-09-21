@@ -5,6 +5,9 @@ Copyright   :
 License     : BSD3
 Maintainer  : The Idris Community.
 -}
+
+{-# OPTIONS_GHC -Wall #-}
+
 module Idris.Elab.RunElab (elabRunElab) where
 
 import Idris.Elab.Term
@@ -14,12 +17,10 @@ import Idris.AbsSyntax
 import Idris.Error
 
 import Idris.Core.Elaborate hiding (Tactic (..))
-import Idris.Core.Evaluate
-import Idris.Core.Execute
 import Idris.Core.TT
 import Idris.Core.Typecheck
 
-import Idris.Output (iputStrLn, pshow, iWarn, sendHighlighting)
+import Idris.Output (sendHighlighting)
 
 elabScriptTy :: Type
 elabScriptTy = App Complete (P Ref (sNS (sUN "Elab") ["Elab", "Reflection", "Language"]) Erased)
@@ -39,18 +40,16 @@ elabRunElab info fc script' ns =
      mustBeElabScript scriptTy
      ist <- getIState
      ctxt <- getContext
-     (ElabResult tyT' defer is ctxt' newDecls highlights newGName, log) <-
+     (ElabResult _ _ _ ctxt' newDecls highlights newGName, _) <-
         tclift $ elaborate (constraintNS info) ctxt (idris_datatypes ist) (idris_name ist) (sMN 0 "toplLevelElab") elabScriptTy initEState
                  (transformErr RunningElabScript
                    (erun fc (do tm <- runElabAction info ist fc [] script ns
                                 EState is _ impls highlights _ _ <- getAux
-                                ctxt <- get_context
-                                let ds = [] -- todo
-                                log <- getLog
+                                newCtxt <- get_context
+                                let ds = [] -- TODO
+                                _ <- getLog -- XXX: Unused
                                 newGName <- get_global_nextname
-                                return (ElabResult tm ds (map snd is) ctxt impls highlights newGName))))
-
-
+                                return (ElabResult tm ds (map snd is) newCtxt impls highlights newGName))))
 
      setContext ctxt'
      processTacticDecls info newDecls

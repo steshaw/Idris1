@@ -23,10 +23,11 @@ TT is the core language of Idris. The language has:
      programs with implicit syntax into fully explicit terms.
 -}
 
+{-# OPTIONS_GHC -fwarn-incomplete-patterns #-}
+{-# LANGUAGE NoImplicitPrelude #-}
 {-# LANGUAGE DeriveFunctor #-}
 {-# LANGUAGE DeriveDataTypeable #-}
 {-# LANGUAGE DeriveGeneric #-}
-{-# OPTIONS_GHC -fwarn-incomplete-patterns #-}
 
 module Idris.Core.TT(
     AppStatus(..), ArithTy(..), Binder(..), Const(..), Ctxt
@@ -54,11 +55,7 @@ module Idris.Core.TT(
   , uniqueNameFrom, uniqueNameSet, unList, updateDef, vToP, weakenTm
   ) where
 
--- Work around AMP without CPP
-import Prelude (Eq(..), Show(..), Ord(..), Functor(..), Monad(..), String, Int,
-                Integer, Ordering(..), Maybe(..), Num(..), Bool(..), Enum(..),
-                Read(..), FilePath, Double, (&&), (||), ($), (.), div, error, flip,
-                fst, snd, not, mod, read, otherwise)
+import Idris.Prelude
 
 import Control.Applicative (Applicative (..), Alternative)
 import qualified Control.Applicative as A (Alternative (..))
@@ -487,6 +484,7 @@ sNS n ss = NS n $!! (map txt ss)
 sMN :: Int -> String -> Name
 sMN i s = MN i (txt s)
 
+caseName :: Name -> Bool
 caseName (SN (CaseN _ _)) = True
 caseName (NS n _) = caseName n
 caseName _ = False
@@ -948,7 +946,7 @@ instance Sized UExp where
   size _ = 1
 
 instance Show UExp where
-    show (UVar ns x) 
+    show (UVar ns x)
        | x < 26 = ns ++ "." ++ [toEnum (x + fromEnum 'a')]
        | otherwise = ns ++ "." ++ toEnum ((x `mod` 26) + fromEnum 'a') : show (x `div` 26)
     show (UVal x) = show x

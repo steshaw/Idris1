@@ -1,19 +1,37 @@
 {-|
 Module      : Idris.Output
-Description : Utilities to display Idris' internals and other informtation to the user.
+Description : Utilities to display Idris' internals and other information to the user.
 Copyright   :
 License     : BSD3
 Maintainer  : The Idris Community.
 -}
 
-{-# OPTIONS_GHC -fwarn-incomplete-patterns #-}
+{-# OPTIONS_GHC -Wall #-}
+{-# OPTIONS_GHC -fno-warn-orphans #-}
+{-# LANGUAGE NoImplicitPrelude #-}
 
 module Idris.Output where
 
-import Idris.Core.TT
-import Idris.Core.Evaluate (isDConName, isTConName, isFnName, normaliseAll)
+import Idris.Prelude
+import Idris.Core.TT hiding (str, txt)
+import Idris.Core.Evaluate (normaliseAll)
 
 import Idris.AbsSyntax
+  ( getIState, putIState, updateIState, runIO
+  , getWidth
+  )
+import Idris.AbsSyntaxTree
+  ( PTerm
+  , prettyName
+  , OutputMode(..) , OutputFmt(..)
+  , ConsoleWidth(..) , PPOption(..)
+  , Idris, IState(..)
+  -- Needs IState:
+  , consoleDecorate , annotationColour
+  , ppOptionIst , prettyIst
+  -- Needs Idris
+  , throwError
+  )
 import Idris.Colours (hStartColourise, hEndColourise)
 import Idris.Delaborate
 import Idris.Docstrings
@@ -23,18 +41,14 @@ import Util.Pretty
 import Util.ScreenSize (getScreenWidth)
 import Util.System (isATTY)
 
-import Control.Monad.Trans.Except (ExceptT (ExceptT), runExceptT)
-
-import System.Console.Haskeline.MonadException
-  (MonadException (controlIO), RunIO (RunIO))
-import System.IO (stdout, Handle, hPutStrLn, hPutStr)
-import System.FilePath (replaceExtension)
-
-import Prelude hiding ((<$>))
-
-import Data.Char (isAlpha)
+import Control.Monad.Trans.Except (ExceptT(ExceptT), runExceptT)
 import Data.List (nub, intersperse)
 import Data.Maybe (fromMaybe)
+import System.Console.Haskeline.MonadException
+  (MonadException(controlIO), RunIO(RunIO))
+import System.IO (Handle, hPutStrLn, hPutStr)
+import System.FilePath (replaceExtension)
+
 
 instance MonadException m => MonadException (ExceptT Err m) where
     controlIO f = ExceptT $ controlIO $ \(RunIO run) -> let
@@ -76,8 +90,8 @@ iRender d = do w <- getWidth
                                  then renderPretty 1.0 1000000000 d
                                  else renderPretty 0.8 n d
                  AutomaticWidth | ideMode || not tty -> return $ renderPretty 1.0 80 d
-                                | otherwise -> do width <- runIO getScreenWidth
-                                                  return $ renderPretty 0.8 width d
+                                | otherwise -> do screenWidth <- runIO getScreenWidth
+                                                  return $ renderPretty 0.8 screenWidth d
 
 hWriteDoc :: Handle -> IState -> SimpleDoc OutputAnnotation -> Idris ()
 hWriteDoc h ist rendered =
@@ -102,15 +116,15 @@ iPrintTermWithType tm ty = iRenderResult (tm <+> colon <+> align ty)
 
 -- | Pretty-print a collection of overloadings to REPL or IDEMode - corresponds to :t name
 iPrintFunTypes :: [(Name, Bool)] -> Name -> [(Name, Doc OutputAnnotation)] -> Idris ()
-iPrintFunTypes bnd n []        = iPrintError $ "No such variable " ++ show n
-iPrintFunTypes bnd n overloads = do ist <- getIState
+iPrintFunTypes _   n []        = iPrintError $ "No such variable " ++ show n
+iPrintFunTypes bnd _ overloads = do ist <- getIState
                                     let ppo = ppOptionIst ist
                                     let infixes = idris_infixes ist
                                     let output = vsep (map (uncurry (ppOverload ppo infixes)) overloads)
                                     iRenderResult output
   where fullName ppo n | length overloads > 1 = prettyName True True bnd n
                        | otherwise = prettyName True (ppopt_impl ppo) bnd n
-        ppOverload ppo infixes n tm =
+        ppOverload ppo _ n tm =
           fullName ppo n <+> colon <+> align tm
 
 iRenderOutput :: Doc OutputAnnotation -> Idris ()
@@ -154,14 +168,14 @@ iRenderError e = do ist <- getIState
                       IdeMode n h -> ideModeReturnWithStatus "error" n h e
 
 iPrintWithStatus :: String -> String -> Idris ()
-iPrintWithStatus status s = do
+iPrintWithStatus status str = do
   i <- getIState
   case idris_outputmode i of
-    RawOutput h -> case s of
+    RawOutput h -> case str of
       "" -> return ()
       s  -> runIO $ hPutStrLn h s
     IdeMode n h ->
-      let good = SexpList [SymbolAtom status, toSExp s] in
+      let good = SexpList [SymbolAtom status, toSExp str] in
       runIO $ hPutStrLn h $ convSExp "return" good n
 
 
@@ -220,8 +234,8 @@ prettyDocumentedIst ist (name, ty, docs) =
 
 sendParserHighlighting :: Idris ()
 sendParserHighlighting =
-  do ist <- getIState
-     let hs = map unwrap . nub . map wrap $ idris_parserHighlights ist
+  do istate <- getIState
+     let hs = map unwrap . nub . map wrap $ idris_parserHighlights istate
      sendHighlighting hs
      ist <- getIState
      putIState ist {idris_parserHighlights = []}
@@ -230,13 +244,13 @@ sendParserHighlighting =
 
 sendHighlighting :: [(FC, OutputAnnotation)] -> Idris ()
 sendHighlighting highlights =
-  do ist <- getIState
-     case idris_outputmode ist of
+  do istate <- getIState
+     case idris_outputmode istate of
        RawOutput _ -> updateIState $
                       \ist -> ist { idris_highlightedRegions =
                                       highlights ++ idris_highlightedRegions ist }
        IdeMode n h ->
-         let fancier = [ toSExp (fc, fancifyAnnots ist False annot)
+         let fancier = [ toSExp (fc, fancifyAnnots istate False annot)
                        | (fc, annot) <- highlights, fullFC fc
                        ]
          in case fancier of
@@ -265,13 +279,13 @@ clearHighlights :: Idris ()
 clearHighlights = updateIState $ \ist -> ist { idris_highlightedRegions = [] }
 
 renderExternal :: OutputFmt -> Int -> Doc OutputAnnotation -> Idris String
-renderExternal fmt width doc
-  | width < 1 = throwError . Msg $ "There must be at least one column for the pretty-printer."
+renderExternal outFmt outWidth doc
+  | outWidth < 1 = throwError . Msg $ "There must be at least one column for the pretty-printer."
   | otherwise =
     do ist <- getIState
-       return . wrap fmt .
-         displayDecorated (decorate fmt) .
-         renderPretty 1.0 width .
+       return . wrap outFmt .
+         displayDecorated (decorate outFmt) .
+         renderPretty 1.0 outWidth .
          fmap (fancifyAnnots ist True) $
            doc
   where

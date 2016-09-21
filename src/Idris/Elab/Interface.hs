@@ -6,11 +6,13 @@ License     : BSD3
 Maintainer  : The Idris Community.
 -}
 
-{-# LANGUAGE PatternGuards #-}
 {-# OPTIONS_GHC -fwarn-missing-signatures #-}
+{-# LANGUAGE NoImplicitPrelude #-}
+{-# LANGUAGE PatternGuards #-}
 
-module Idris.Elab.Interface(elabInterface) where
+module Idris.Elab.Interface (elabInterface) where
 
+import Idris.Prelude
 import Idris.AbsSyntax
   ( getIState
   , namesIn
@@ -46,9 +48,7 @@ import Idris.Core.Evaluate
 
 import Idris.Docstrings
 
-import Prelude hiding (id, (.), (<$>))
 import Control.Applicative hiding (Const)
-import Control.Category
 import Control.Monad
 import Data.List
 import Data.Maybe

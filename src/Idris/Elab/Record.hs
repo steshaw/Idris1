@@ -5,35 +5,40 @@ Copyright   :
 License     : BSD3
 Maintainer  : The Idris Community.
 -}
-{-# LANGUAGE PatternGuards, ViewPatterns #-}
+
+{-# LANGUAGE PatternGuards #-}
+{-# LANGUAGE ViewPatterns #-}
+
 module Idris.Elab.Record(elabRecord) where
 
 import Idris.AbsSyntax
-import Idris.Docstrings
-import Idris.Error
+  ( getIState
+  , addRecord, addIBC
+  , logElab
+  , substMatches -- IState free
+  )
+import Idris.AbsSyntaxTree
+  ( PTerm(..), PDecl, PDecl'(..), PClause'(..), PArg, PArg'(..), PData'(..), SyntaxInfo
+  , mapPT, allNamesIn
+  , Plicity(..), impl, expl
+  , pexp
+  , ElabInfo(rec_elabDecl)
+  , ElabWhat(..)
+  , RecordInfo(..)
+  , IBCWrite(IBCRecord)
+  , Idris, IState(..)
+  , expandNS
+  , showTmImpls
+  )
 import Idris.Delaborate
-import Idris.Imports
-import Idris.Elab.Term
-import Idris.Coverage
-import Idris.DataOpts
-import Idris.Providers
-import Idris.Primitives
-import Idris.Inliner
-import Idris.PartialEval
-import Idris.DeepSeq
-import Idris.Output (iputStrLn, pshow, iWarn, sendHighlighting)
-import IRTS.Lang
-
+import Idris.Docstrings
+import Idris.Elab.Data
+import Idris.Error
+import Idris.Output (sendHighlighting)
 import Idris.Parser.Expr (tryFullExpr)
 
-import Idris.Elab.Type
-import Idris.Elab.Data
-import Idris.Elab.Utils
-
-import Idris.Core.TT
+import Idris.Core.TT hiding (uniqueName)
 import Idris.Core.Evaluate
-
-import Idris.Elab.Data
 
 import Data.Maybe
 import Data.List
@@ -92,7 +97,7 @@ elabRecord info what doc rsyn fc opts tyn nfc params paramDocs fields cname cdoc
   where
     -- | Generates a type constructor.
     generateTyConType :: [(Name, FC, Plicity, PTerm)] -> PTerm
-    generateTyConType ((n, nfc, p, t) : rest) = PPi p (nsroot n) nfc t (generateTyConType rest)
+    generateTyConType ((n, fc', p, t) : rest) = PPi p (nsroot n) fc' t (generateTyConType rest)
     generateTyConType [] = (PType fc)
 
     -- | Generates a name for the data constructor if none was specified.
@@ -108,7 +113,7 @@ elabRecord info what doc rsyn fc opts tyn nfc params paramDocs fields cname cdoc
 
     -- | Generates the data constructor type.
     generateDConType :: [(Name, FC, Plicity, PTerm)] -> [(Name, FC, Plicity, PTerm, a)] -> PTerm
-    generateDConType ((n, nfc, _, t) : ps) as                  = PPi impl (nsroot n) NoFC t (generateDConType ps as)
+    generateDConType ((n, _, _, t) : ps) as                  = PPi impl (nsroot n) NoFC t (generateDConType ps as)
     generateDConType []               ((n, _, p, t, _) : as) = PPi p    (nsroot n) NoFC t (generateDConType [] as)
     generateDConType [] [] = target
 
@@ -120,11 +125,11 @@ elabRecord info what doc rsyn fc opts tyn nfc params paramDocs fields cname cdoc
     paramsAndDoc = pad params paramDocs
       where
         pad :: [(Name, FC, Plicity, PTerm)] -> [(Name, Docstring (Either Err PTerm))] -> [(Name, FC, Plicity, PTerm, Docstring (Either Err PTerm))]
-        pad ((n, fc, p, t) : rest) docs
+        pad ((n, fc', p, t) : rest) docs
           = let d = case lookup n docs of
                      Just d' -> d
                      Nothing -> emptyDocstring
-            in (n, fc, p, t, d) : (pad rest docs)
+            in (n, fc', p, t, d) : (pad rest docs)
         pad _ _ = []
 
     dconsArgDocs :: [(Name, Docstring (Either Err PTerm))]
@@ -150,17 +155,17 @@ elabRecord info what doc rsyn fc opts tyn nfc params paramDocs fields cname cdoc
         baseName = (sUN "__pi_arg", NoFC)
 
         newName :: [Name] -> (Name, FC) -> (Name, FC)
-        newName ns (n, nfc)
-          | n `elem` ns = newName ns (nextName n, nfc)
-          | otherwise = (n, nfc)
+        newName ns (n, fc')
+          | n `elem` ns = newName ns (nextName n, fc')
+          | otherwise = (n, fc')
 
     fieldsWithNameAndDoc :: [(Name, FC, Plicity, PTerm, Docstring (Either Err PTerm))]
     fieldsWithNameAndDoc = fwnad fieldsWithName
       where
         fwnad :: [(Name, FC, Plicity, PTerm, Maybe (Docstring (Either Err PTerm)))] -> [(Name, FC, Plicity, PTerm, Docstring (Either Err PTerm))]
-        fwnad ((n, nfc, p, t, d) : rest)
-          = let doc = fromMaybe emptyDocstring d
-            in (n, nfc, p, t, doc) : (fwnad rest)
+        fwnad ((n, fc', p, t, d) : rest)
+          = let docstring = fromMaybe emptyDocstring d
+            in (n, fc', p, t, docstring) : (fwnad rest)
         fwnad [] = []
 
 elabRecordFunctions :: ElabInfo
@@ -178,9 +183,9 @@ elabRecordFunctions info rsyn fc tyn params fields dconName target
        logElab 3 $ "Fields: " ++ show fieldNames
        logElab 3 $ "Params: " ++ show paramNames
        -- The elaborated constructor type for the data declaration
-       i <- getIState
+       ist <- getIState
        ttConsTy <-
-         case lookupTyExact dconName (tt_ctxt i) of
+         case lookupTyExact dconName (tt_ctxt ist) of
                Just as -> return as
                Nothing -> tclift $ tfail $ At fc (Elaborating "record " tyn Nothing (InternalMsg "It seems like the constructor for this record has disappeared. :( \n This is a bug. Please report."))
 
@@ -189,14 +194,14 @@ elabRecordFunctions info rsyn fc tyn params fields dconName target
        logElab 3 $ "Cons args: " ++ show constructorArgs
        logElab 3 $ "Free fields: " ++ show (filter (not . isFieldOrParam') constructorArgs)
        -- If elaborating the constructor has resulted in some new implicit fields we make projection functions for them.
-       let freeFieldsForElab = map (freeField i) (filter (not . isFieldOrParam') constructorArgs)
+       let freeFieldsForElab = map (freeField ist) (filter (not . isFieldOrParam') constructorArgs)
 
        -- The parameters for elaboration with their documentation
        -- Parameter functions are all prefixed with "param_".
        let paramsForElab = [((nsroot n), (paramName n), impl, t, d) | (n, _, _, t, d) <- params] -- zipParams i params paramDocs]
 
        -- The fields (written by the user) with their documentation.
-       let userFieldsForElab = [((nsroot n), n, p, t, d) | (n, nfc, p, t, d) <- fields]
+       let userFieldsForElab = [((nsroot n), n, p, t, d) | (n, _, p, t, d) <- fields]
 
        -- All things we need to elaborate projection functions for, together with a number denoting their position in the constructor.
        let projectors = [(n, n', p, t, d, i) | ((n, n', p, t, d), i) <- zip (freeFieldsForElab ++ paramsForElab ++ userFieldsForElab) [0..]]
@@ -229,14 +234,17 @@ elabRecordFunctions info rsyn fc tyn params fields dconName target
     isFieldOrParam' :: (Name, a) -> Bool
     isFieldOrParam' = isFieldOrParam . fst
 
-    isField :: Name -> Bool
-    isField = flip elem fieldNames
+-- XXX: Unused.
+--    isField :: Name -> Bool
+--    isField = flip elem fieldNames
 
-    isField' :: (Name, a, b, c, d, f) -> Bool
-    isField' (n, _, _, _, _, _) = isField n
+-- XXX: Unused.
+--    isField' :: (Name, a, b, c, d, f) -> Bool
+--    isField' (n, _, _, _, _, _) = isField n
 
-    fieldTerms :: [PTerm]
-    fieldTerms = [t | (_, _, _, t, _) <- fields]
+-- XXX: Unused.
+--    fieldTerms :: [PTerm]
+--    fieldTerms = [t | (_, _, _, t, _) <- fields]
 
     -- Delabs the TT to PTerm
     -- This is not good.
@@ -271,7 +279,7 @@ elabRecordFunctions info rsyn fc tyn params fields dconName target
 
     -- | Elaborate the projection functions.
     elabProj :: Name -> [Name] -> [(Name, Name, Plicity, PTerm, Docstring (Either Err PTerm), Int)] -> Idris ()
-    elabProj cn paramnames fs 
+    elabProj cn paramnames fs
                    = let phArgs = map (uncurry placeholderArg) [(p, n) | (n, _, p, _, _, _) <- fs]
                          elab = \(n, n', p, t, doc, i) ->
                               -- Use projections in types
@@ -283,7 +291,7 @@ elabRecordFunctions info rsyn fc tyn params fields dconName target
 
     -- | Elaborate the update functions.
     elabUp :: Name -> [Name] -> [(Name, Name, Plicity, PTerm, Docstring (Either Err PTerm), Int)] -> Idris ()
-    elabUp cn paramnames fs 
+    elabUp cn paramnames fs
                  = let args = map (uncurry asPRefArg) [(p, n) | (n, _, p, _, _, _) <- fs]
                        elab = \(n, n', p, t, doc, i) -> elabUpdate info n paramnames n' p t doc rsyn fc target cn args fieldNames i (optionalSetter n)
                    in mapM_ elab fs
@@ -299,14 +307,15 @@ elabRecordFunctions info rsyn fc tyn params fields dconName target
         fieldDep :: Name -> PTerm -> (Name, [Name])
         fieldDep n t = ((nsroot n), paramNames ++ fieldNames `intersect` allNamesIn t)
 
+-- XXX: Unused.
     -- | A list of fields depending on another field.
-    dependentFields :: [Name]
-    dependentFields = filter depends fieldNames
-      where
-        depends :: Name -> Bool
-        depends n = case lookup n fieldDependencies of
-                      Just xs -> not $ null xs
-                      Nothing -> False
+--    dependentFields :: [Name]
+--    dependentFields = filter depends fieldNames
+--      where
+--        depends :: Name -> Bool
+--        depends n = case lookup n fieldDependencies of
+--                      Just xs -> not $ null xs
+--                      Nothing -> False
 
     -- | A list of fields depended on by other fields.
     dependedOn :: [Name]
@@ -327,25 +336,25 @@ elabProjection :: ElabInfo
                -> [Name]                         -- ^ All Field Names
                -> Int                            -- ^ Argument Index
                -> Idris ()
-elabProjection info cname paramnames pname plicity projTy pdoc psyn fc targetTy cn phArgs fnames index
-  = do logElab 1 $ "Generating Projection for " ++ show pname
+elabProjection info cname paramnames fname plicity projTy pdoc psyn fc targetTy cn phArgs _fnames index
+  = do logElab 1 $ "Generating Projection for " ++ show fname
 
        let ty = generateTy
-       logElab 1 $ "Type of " ++ show pname ++ ": " ++ show ty
+       logElab 1 $ "Type of " ++ show fname ++ ": " ++ show ty
 
        let lhs = generateLhs
-       logElab 1 $ "LHS of " ++ show pname ++ ": " ++ showTmImpls lhs
+       logElab 1 $ "LHS of " ++ show fname ++ ": " ++ showTmImpls lhs
        let rhs = generateRhs
-       logElab 1 $ "RHS of " ++ show pname ++ ": " ++ showTmImpls rhs
+       logElab 1 $ "RHS of " ++ show fname ++ ": " ++ showTmImpls rhs
 
        rec_elabDecl info EAll info ty
 
-       let clause = PClause fc pname lhs [] rhs []
-       rec_elabDecl info EAll info $ PClauses fc [] pname [clause]
+       let clause = PClause fc fname lhs [] rhs []
+       rec_elabDecl info EAll info $ PClauses fc [] fname [clause]
   where
     -- | The type of the projection function.
     generateTy :: PDecl
-    generateTy = PTy pdoc [] psyn fc [] pname NoFC $
+    generateTy = PTy pdoc [] psyn fc [] fname NoFC $
                    bindParams paramnames $
                      PPi expl recName NoFC targetTy projTy
 
@@ -355,23 +364,23 @@ elabProjection info cname paramnames pname plicity projTy pdoc psyn fc targetTy 
     -- | The left hand side of the projection function.
     generateLhs :: PTerm
     generateLhs = let args = lhsArgs index phArgs
-                  in PApp fc (PRef fc [] pname) [pexp (PApp fc (PRef fc [] cn) args)]
+                  in PApp fc (PRef fc [] fname) [pexp (PApp fc (PRef fc [] cn) args)]
       where
         lhsArgs :: Int -> [PArg] -> [PArg]
-        lhsArgs 0 (_ : rest) = (asArg plicity (nsroot cname) (PRef fc [] pname_in)) : rest
+        lhsArgs 0 (_ : rest) = (asArg plicity (nsroot cname) (PRef fc [] fname_in)) : rest
         lhsArgs i (x : rest) = x : (lhsArgs (i-1) rest)
         lhsArgs _ [] = []
 
     -- | The "_in" name. Used for the lhs.
-    pname_in :: Name
-    pname_in = rootname -- in_name rootname
+    fname_in :: Name
+    fname_in = rootname -- in_name rootname
 
     rootname :: Name
     rootname = nsroot cname
 
     -- | The right hand side of the projection function.
     generateRhs :: PTerm
-    generateRhs = PRef fc [] pname_in
+    generateRhs = PRef fc [] fname_in
 
 -- | Creates and elaborates an update function.
 -- If 'optional' is true, we will not fail if we can't elaborate the update function.
@@ -390,41 +399,41 @@ elabUpdate :: ElabInfo
            -> Int                            -- ^ Argument Index
            -> Bool                           -- ^ Optional
            -> Idris ()
-elabUpdate info cname paramnames pname plicity pty pdoc psyn fc sty cn args fnames i optional
-  = do logElab 1 $ "Generating Update for " ++ show pname
+elabUpdate info cname paramnames fname plicity pty pdoc psyn fc sty cn args _fnames index _optional
+  = do logElab 1 $ "Generating Update for " ++ show fname
 
        let ty = generateTy
-       logElab 1 $ "Type of " ++ show set_pname ++ ": " ++ show ty
+       logElab 1 $ "Type of " ++ show set_fname ++ ": " ++ show ty
 
        let lhs = generateLhs
-       logElab 1 $ "LHS of " ++ show set_pname ++ ": " ++ showTmImpls lhs
+       logElab 1 $ "LHS of " ++ show set_fname ++ ": " ++ showTmImpls lhs
 
        let rhs = generateRhs
-       logElab 1 $ "RHS of " ++ show set_pname ++ ": " ++ showTmImpls rhs
+       logElab 1 $ "RHS of " ++ show set_fname ++ ": " ++ showTmImpls rhs
 
-       let clause = PClause fc set_pname lhs [] rhs []
+       let clause = PClause fc set_fname lhs [] rhs []
 
        idrisCatch (do rec_elabDecl info EAll info ty
-                      rec_elabDecl info EAll info $ PClauses fc [] set_pname [clause])
-         (\err -> logElab 1 $ "Could not generate update function for " ++ show pname)
-                  {-if optional
-                  then logElab 1 $ "Could not generate update function for " ++ show pname
-                  else tclift $ tfail $ At fc (Elaborating "record update function " pname err)) -}
+                      rec_elabDecl info EAll info $ PClauses fc [] set_fname [clause])
+         (\_err -> logElab 1 $ "Could not generate update function for " ++ show fname)
+                   {-if optional
+                   then logElab 1 $ "Could not generate update function for " ++ show fname
+                   else tclift $ tfail $ At fc (Elaborating "record update function " fname err)) -}
   where
     -- | The type of the update function.
     generateTy :: PDecl
-    generateTy = PTy pdoc [] psyn fc [] set_pname NoFC $
+    generateTy = PTy pdoc [] psyn fc [] set_fname NoFC $
                    bindParams paramnames $
-                     PPi expl (nsroot pname) NoFC pty $
+                     PPi expl (nsroot fname) NoFC pty $
                        PPi expl recName NoFC sty (substInput sty)
-      where substInput = substMatches [(cname, PRef fc [] (nsroot pname))]
+      where substInput = substMatches [(cname, PRef fc [] (nsroot fname))]
 
     bindParams [] t = t
     bindParams (n : ns) ty = PPi impl n NoFC Placeholder (bindParams ns ty)
 
     -- | The "_set" name.
-    set_pname :: Name
-    set_pname = set_name pname
+    set_fname :: Name
+    set_fname = set_name fname
 
     set_name :: Name -> Name
     set_name (UN n) = sUN ("set_" ++ str n)
@@ -434,24 +443,24 @@ elabUpdate info cname paramnames pname plicity pty pdoc psyn fc sty cn args fnam
 
     -- | The left-hand side of the update function.
     generateLhs :: PTerm
-    generateLhs = PApp fc (PRef fc [] set_pname) [pexp $ PRef fc [] pname_in, pexp constructorPattern]
+    generateLhs = PApp fc (PRef fc [] set_fname) [pexp $ PRef fc [] fname_in, pexp constructorPattern]
       where
         constructorPattern :: PTerm
         constructorPattern = PApp fc (PRef fc [] cn) args
 
     -- | The "_in" name.
-    pname_in :: Name
-    pname_in = in_name rootname
+    fname_in :: Name
+    fname_in = in_name rootname
 
     rootname :: Name
-    rootname = nsroot pname
+    rootname = nsroot fname
 
     -- | The right-hand side of the update function.
     generateRhs :: PTerm
-    generateRhs = PApp fc (PRef fc [] cn) (newArgs i args)
+    generateRhs = PApp fc (PRef fc [] cn) (newArgs index args)
       where
         newArgs :: Int -> [PArg] -> [PArg]
-        newArgs 0 (_ : rest) = (asArg plicity (nsroot cname) (PRef fc [] pname_in)) : rest
+        newArgs 0 (_ : rest) = (asArg plicity (nsroot cname) (PRef fc [] fname_in)) : rest
         newArgs i (x : rest) = x : (newArgs (i-1) rest)
         newArgs _ [] = []
 
@@ -473,6 +482,7 @@ asArg (TacImp os _ s) n t = PTacImplicit 0 os n s t
 recName :: Name
 recName = sMN 0 "rec"
 
+recRef :: PTerm
 recRef = PRef emptyFC [] recName
 
 projectInType :: [(Name, Name)] -> PTerm -> PTerm

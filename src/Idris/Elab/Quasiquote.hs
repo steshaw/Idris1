@@ -6,11 +6,15 @@ License     : BSD3
 Maintainer  : The Idris Community.
 -}
 
+{-# OPTIONS_GHC -Wall #-}
+
 module Idris.Elab.Quasiquote (extractUnquotes) where
 
+import Idris.AbsSyntaxTree
+  ( PTerm(..), PArg, PArg'(..), PTactic, PTactic'(..), PDo, PDo'(..)
+  )
 import Idris.Core.Elaborate hiding (Tactic(..), goal)
 import Idris.Core.TT
-import Idris.AbsSyntax
 
 
 extract1 :: Int -> (PTerm -> a) -> PTerm -> Elab' aux (a, [(Name, PTerm)])

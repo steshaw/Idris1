@@ -6,8 +6,9 @@ License     : BSD3
 Maintainer  : The Idris Community.
 -}
 
-{-# LANGUAGE PatternGuards #-}
 {-# OPTIONS_GHC -fwarn-incomplete-patterns #-}
+{-# LANGUAGE NoImplicitPrelude #-}
+{-# LANGUAGE PatternGuards #-}
 
 module Idris.Delaborate (
     annName, bugaddr, delab, delabDirect, delab', delabMV, delabSugared
@@ -15,8 +16,7 @@ module Idris.Delaborate (
   , pprintDelabTy, pprintErr, resugar
   ) where
 
-import Util.Pretty
-
+import Idris.Prelude
 import Idris.AbsSyntax (isMetavarName, isPostulateName)
 import Idris.AbsSyntaxTree
   ( PTerm(..), PDo'(..), PArg, PArg'(..), ArgOpt(..), getExps
@@ -36,7 +36,7 @@ import Idris.Core.Evaluate
 import Idris.Docstrings (overview, renderDocstring, renderDocTerm)
 import Idris.ErrReverse
 
-import Prelude hiding ((<$>))
+import Util.Pretty
 
 import Data.Generics.Uniplate.Data (transform)
 import Data.Maybe (mapMaybe)

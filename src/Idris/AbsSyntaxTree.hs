@@ -6,6 +6,7 @@ License     : BSD3
 Maintainer  : The Idris Community.
 -}
 
+{-# LANGUAGE NoImplicitPrelude #-}
 {-# LANGUAGE DeriveFunctor #-}
 {-# LANGUAGE DeriveDataTypeable #-}
 {-# LANGUAGE DeriveGeneric #-}
@@ -16,24 +17,18 @@ module Idris.AbsSyntaxTree where
 import Idris.Core.TT
 import Idris.Core.Evaluate
 import Idris.Core.Elaborate hiding (Tactic(..))
+import Idris.Colours
 import Idris.Docstrings
+import Idris.Prelude
 import IRTS.Lang
 import IRTS.CodegenCommon
 import Util.Pretty
 import Util.DynamicLinker
 
-import Idris.Colours
-
-import System.IO
-
-import Prelude hiding ((<$>), Traversable, Foldable)
-
 import Control.Applicative ((<|>))
-
 import Control.Monad.Trans.State.Strict
 import Control.Monad.Trans.Except
 import qualified Control.Monad.Trans.Class as Trans (lift)
-
 import Data.Data (Data)
 import Data.Function (on)
 import Data.Generics.Uniplate.Data (universe, children)
@@ -48,6 +43,7 @@ import Data.Typeable
 import Data.Foldable (Foldable)
 import GHC.Generics (Generic)
 import Network.Socket(PortNumber)
+import System.IO
 
 data ElabWhat = ETypes | EDefns | EAll
   deriving (Show, Eq)
@@ -1444,7 +1440,7 @@ deriving instance Binary InterfaceInfo
 
 -- Record data
 data RecordInfo = RI {
-    record_parameters  :: [(Name,PTerm)]
+    record_parameters  :: [(Name, PTerm)]
   , record_constructor :: Name
   , record_projections :: [Name]
   } deriving (Show, Generic)
@@ -1463,7 +1459,7 @@ deriving instance Binary FnInfo
 !-}
 
 data OptInfo = Optimise {
-    inaccessible :: [(Int,Name)]  -- includes names for error reporting
+    inaccessible :: [(Int, Name)]  -- includes names for error reporting
   , detaggable :: Bool
   } deriving (Show, Generic)
 {-!

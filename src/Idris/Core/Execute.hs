@@ -6,11 +6,15 @@ License     : BSD3
 Maintainer  : The Idris Community.
 -}
 
-{-# LANGUAGE PatternGuards, ExistentialQuantification, CPP #-}
 {-# OPTIONS_GHC -fwarn-incomplete-patterns #-}
+{-# LANGUAGE NoImplicitPrelude #-}
+{-# LANGUAGE PatternGuards #-}
+{-# LANGUAGE ExistentialQuantification #-}
+{-# LANGUAGE CPP #-}
 
 module Idris.Core.Execute (execute) where
 
+import Idris.Prelude
 import Idris.AbsSyntax (getIState, getContext)
 import Idris.AbsSyntaxTree (Idris, IState(..), unitCon)
 import IRTS.Lang(FDesc(..), FType(..))
@@ -28,7 +32,6 @@ import Debug.Trace
 import Util.DynamicLinker
 import Util.System
 
-import Prelude hiding ((<$>))
 import Control.Applicative hiding (Const)
 import Control.Exception
 import Control.Monad.Trans

@@ -6,26 +6,29 @@ License     : BSD3
 Maintainer  : The Idris Community.
 -}
 
-{-# LANGUAGE PatternGuards, ViewPatterns #-}
+{-# LANGUAGE PatternGuards #-}
+{-# LANGUAGE ViewPatterns #-}
 {-# OPTIONS_GHC -fwarn-incomplete-patterns #-}
 
 module Idris.Elab.Rewrite(elabRewrite, elabRewriteLemma) where
 
 import Idris.AbsSyntax (addImplBound, getIState)
-import Idris.AbsSyntaxTree (
-    PTerm(..), PArg, PArg'(..), PDecl'(..), PClause'(..)
+import Idris.AbsSyntaxTree
+  ( PTerm(..), PArg, PArg'(..), PDecl'(..), PClause'(..), mapPT
+  , pexp
+  , expl, impl, forall_imp -- `Plicity`s
   , ElabInfo(..), ElabWhat(..), ElabD
-  ,  expl, impl, forall_imp -- `Plicity`s
   , defaultSyntax
-  ,  Idris, IState(..), pexp, mapPT
+  , Idris, IState(..)
   )
 import Idris.Delaborate
 import Idris.Error
 import Idris.Core.TT
-import Idris.Core.Elaborate
+import Idris.Core.Elaborate hiding (rewrite)
 import Idris.Core.Evaluate
 import Idris.Docstrings
 
+import Prelude hiding (pred)
 import Control.Monad
 import Control.Monad.State.Strict
 

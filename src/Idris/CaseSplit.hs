@@ -19,7 +19,7 @@ names over '_', patterns over names, etc.
 
 {-# LANGUAGE PatternGuards #-}
 
-{-# OPTIONS_GHC -Wall -fwarn-tabs #-}
+{-# OPTIONS_GHC -Wall #-}
 {-# OPTIONS_GHC -fno-warn-unused-matches #-} -- FIXME: Remove.
 {-# OPTIONS_GHC -fno-warn-name-shadowing #-} -- FIXME: Remove.
 {-# OPTIONS_GHC -fno-warn-missing-signatures #-} -- FIXME: Remove.

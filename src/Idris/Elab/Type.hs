@@ -14,21 +14,30 @@ module Idris.Elab.Type (
   ) where
 
 import Idris.AbsSyntax
-import Idris.ASTUtils
-import Idris.DSL
+  ( getIState, putIState, updateIState, getContext, setContext
+  , getUnboundImplicits, getFromHideList, useREPL
+  , setFnInfo, setFlags
+  , addImpl, addUsingConstraints, addUsingImpls, addIBC, addCalls, addStatics
+  , addTyInferred, addInternalApp, addDefinedName, addDeferred, addDocStr
+  , addCoercion, addAutoHint, addExport
+  , checkUndefined, solveDeferred
+  , logElab
+  )
+import Idris.AbsSyntaxTree
+  ( PTerm(..), SyntaxInfo(..), FnOpts, FnOpt(..)
+  , Idris, IState(..)
+  , FnInfo(..)
+  , ElabInfo
+  , showTmImpls
+  , constraintNS
+  , initEState
+  , IBCWrite(..)
+  , LanguageExt(ErrorReflection)
+  )
+import Idris.ASTUtils (fputState, opt_inaccessible, ist_optimisation)
 import Idris.Error
-import Idris.Delaborate
-import Idris.Imports
 import Idris.Elab.Term
-import Idris.Coverage
-import Idris.DataOpts
-import Idris.Providers
-import Idris.Primitives
-import Idris.Inliner
-import Idris.PartialEval
-import Idris.DeepSeq
-import Idris.Output (iputStrLn, pshow, iWarn, sendHighlighting)
-import IRTS.Lang
+import Idris.Output (sendHighlighting)
 
 import Idris.Elab.Utils
 import Idris.Elab.Value
@@ -36,32 +45,15 @@ import Idris.Elab.Value
 import Idris.Core.TT
 import Idris.Core.Elaborate hiding (Tactic(..))
 import Idris.Core.Evaluate
-import Idris.Core.Execute
-import Idris.Core.Typecheck
-import Idris.Core.CaseTree
 
 import Idris.Docstrings (Docstring)
 
 import Prelude hiding (id, (.))
 import Control.Category
-
-import Control.Applicative hiding (Const)
-import Control.DeepSeq
 import Control.Monad
-import Control.Monad.State.Strict as State
-import Data.List
-import Data.Maybe
-import Debug.Trace
 
-import qualified Data.Traversable as Traversable
-
-import qualified Data.Map as Map
 import qualified Data.Set as S
-import qualified Data.Text as T
-import Data.Char(isLetter, toLower)
-import Data.List.Split (splitOn)
 
-import Util.Pretty(pretty, text)
 
 buildType :: ElabInfo
           -> SyntaxInfo

@@ -4,6 +4,10 @@ Description : Main function to decide Idris' mode of use.
 License     : BSD3
 Maintainer  : The Idris Community.
 -}
+
+{-# OPTIONS_GHC -Wall #-}
+{-# LANGUAGE NoImplicitPrelude #-}
+
 module Idris.Main
   ( idrisMain
   , idris
@@ -12,12 +16,37 @@ module Idris.Main
   , loadInputs -- taken from Idris.ModeCommon
   ) where
 
+import Idris.Prelude
 import Idris.AbsSyntax
+  ( getIState, putIState, getContext, runIO, logLvl
+  , setWidth, setSourceDirs, setOptLevel, setColourise
+  , setREPL, setQuiet, setVerbose, setCmdLine, setOutputTy
+  , setNoBanner, setCodegen, setIBCSubDir, setIBCSubDir, setImportDirs
+  , setLogLevel, setLogCats, setTypeCase, setTypeInType, setCoverage
+  , setErrContext, setIndentWith, setIndentClause
+  , addLangExt, addFlag, addAutoImport, addImportDir, addIBC
+  , addOptimise, removeOptimise
+  , noErrors, colourise
+  , opt
+  , getConsoleWidth, getFile, getOutput, getIBCSubDir, getImportDir, getSourceDir
+  , getPkgDir, getBC, getOptLevel, getOutputTy, getCodegen, getCodegenArgs
+  , getOptimisation, getColour, getLanguageExt, getExecScript, getEvalExpr
+  , getPort, getPkgIndex
+  )
+import Idris.AbsSyntaxTree
+  ( Opt(..)
+  , Optimisation , REPLPort(..), Codegen(..), IRFormat(..)
+  , DefaultTotality(..), ConsoleWidth(..)
+  , IBCWrite(IBCImportDir)
+  , Idris
+  , IState(default_total, idris_totcheckfail)
+  , idrisInit
+  )
 import Idris.ModeCommon
 import Idris.REPL.Parser
 import Idris.Error
 import Idris.IBC
-import Idris.Parser hiding (indent)
+import Idris.Parser (loadModule, parseExpr, fixColour)
 import Idris.Output
 
 import Idris.REPL.Commands
@@ -28,29 +57,25 @@ import Idris.Elab.Value
 import Idris.Elab.Term
 import Idris.Info
 
-import Util.System
-
 import Idris.Core.Execute (execute)
-import Idris.Core.TT
+import Idris.Core.TT hiding (str)
 
 import IRTS.CodegenCommon
 
-import Control.Category
-import Prelude hiding ((<$>), (.), id)
+import Util.System
 
-import Text.Trifecta.Result(Result(..), ErrInfo(..))
-
-import System.Console.Haskeline as H
+import Control.DeepSeq
+import Control.Monad
+import Control.Monad.Trans.Except (runExceptT)
+import Control.Monad.Trans.State.Strict (execStateT)
+import Control.Monad.Trans (lift)
+import Data.Maybe
+import qualified System.Console.Haskeline as H
 import System.FilePath
 import System.Exit
 import System.Directory
 import System.IO
-import Control.Monad
-import Control.Monad.Trans.Except (runExceptT)
-import Control.Monad.Trans.State.Strict (execStateT)
-import Control.Monad.Trans ( lift )
-import Data.Maybe
-import Control.DeepSeq
+import Text.Trifecta.Result(Result(..), ErrInfo(..))
 
 -- | How to run Idris programs.
 runMain :: Idris () -> IO ()
@@ -100,7 +125,7 @@ idrisMain opts =
 
        script <- case opt getExecScript opts of
                    []     -> return Nothing
-                   x:y:xs -> do iputStrLn "More than one interpreter expression found."
+                   _:_:_  -> do iputStrLn "More than one interpreter expression found."
                                 runIO $ exitWith (ExitFailure 1)
                    [expr] -> return (Just expr)
        let immediate = opt getEvalExpr opts
@@ -112,8 +137,6 @@ idrisMain opts =
                                             putIState (i { default_total = DefaultCheckingTotal })
        tty <- runIO isATTY
        setColourise $ not quiet && last (tty : opt getColour opts)
-
-
 
        mapM_ addLangExt (opt getLanguageExt opts)
        setREPL runrepl
@@ -128,28 +151,24 @@ idrisMain opts =
        -- if we have the --bytecode flag, drop into the bytecode assembler
        case bcs of
          [] -> return ()
-         xs -> return () -- runIO $ mapM_ bcAsm xs
+         _  -> return () -- runIO $ mapM_ bcAsm xs
        case ibcsubdir of
          [] -> setIBCSubDir ""
          (d:_) -> setIBCSubDir d
        setImportDirs importdirs
-
-       setNoBanner nobanner
 
        when (not (NoBasePkgs `elem` opts)) $ do
            addPkgDir "prelude"
            addPkgDir "base"
        mapM_ addPkgDir pkgdirs
        elabPrims
-       when (not (NoBuiltins `elem` opts)) $ do x <- loadModule "Builtins" (IBC_REPL True)
+       when (not (NoBuiltins `elem` opts)) $ do _ <- loadModule "Builtins" (IBC_REPL True)
                                                 addAutoImport "Builtins"
                                                 return ()
-       when (not (NoPrelude `elem` opts)) $ do x <- loadModule "Prelude" (IBC_REPL True)
+       when (not (NoPrelude `elem` opts)) $ do _ <- loadModule "Prelude" (IBC_REPL True)
                                                addAutoImport "Prelude"
                                                return ()
        when (runrepl && not idesl) initScript
-
-       nobanner <- getNoBanner
 
        when (runrepl &&
              not quiet &&
@@ -196,7 +215,7 @@ idrisMain opts =
                       exists <- runIO $ doesDirectoryExist dir
                       unless exists $ logLvl 1 ("Creating " ++ dir)
                       runIO $ createDirectoryIfMissing True (dir </> "repl"))
-         (\e -> return ())
+         (\_ -> return ())
 
        historyFile <- runIO $ getIdrisHistoryFile
 
@@ -209,11 +228,11 @@ idrisMain opts =
          case port of
            DontListen -> return ()
            ListenPort port' -> startServer port' orig mods
-         runInputT (replSettings (Just historyFile)) $ repl (force orig) mods efile
+         H.runInputT (replSettings (Just historyFile)) $ repl (force orig) mods efile
        let idesock = IdemodeSocket `elem` opts
        when (idesl) $ idemodeStart idesock orig inputs
-       ok <- noErrors
-       when (not ok) $ runIO (exitWith (ExitFailure 1))
+       ok' <- noErrors
+       when (not ok') $ runIO (exitWith (ExitFailure 1))
   where
     makeOption (OLogging i)     = setLogLevel i
     makeOption (OLogCats cs)    = setLogCats cs
@@ -225,7 +244,7 @@ idrisMain opts =
     makeOption (IndentClause n) = setIndentClause n
     makeOption _                = return ()
 
-    processOptimisation :: (Bool,Optimisation) -> Idris ()
+    processOptimisation :: (Bool, Optimisation) -> Idris ()
     processOptimisation (True,  p) = addOptimise p
     processOptimisation (False, p) = removeOptimise p
 
@@ -233,7 +252,6 @@ idrisMain opts =
     addPkgDir p = do ddir <- runIO getIdrisLibDir
                      addImportDir (ddir </> p)
                      addIBC (IBCImportDir (ddir </> p))
-
 
 
 -- | Invoke as if from command line. It is an error if there are
@@ -258,9 +276,9 @@ execScript expr = do i <- getIState
                      case parseExpr i expr of
                           Failure (ErrInfo err _) -> do iputStrLn $ show (fixColour c err)
                                                         runIO $ exitWith (ExitFailure 1)
-                          Success term -> do ctxt <- getContext
+                          Success term -> do _ <- getContext
                                              (tm, _) <- elabVal (recinfo (fileFC "toplevel")) ERHS term
-                                             res <- execute tm
+                                             _ <- execute tm
                                              runIO $ exitSuccess
 
 -- | Run the initialisation script
@@ -283,12 +301,12 @@ initScript = do script <- runIO $ getIdrisInitScript
                            runInit h
           processLine i cmd input clr =
               case parseCmd i input cmd of
-                   Failure (ErrInfo err _) -> runIO $ print (fixColour clr err)
-                   Success (Right Reload) -> iPrintError "Init scripts cannot reload the file"
-                   Success (Right (Load f _)) -> iPrintError "Init scripts cannot load files"
-                   Success (Right (ModImport f)) -> iPrintError "Init scripts cannot import modules"
-                   Success (Right Edit) -> iPrintError "Init scripts cannot invoke the editor"
-                   Success (Right Proofs) -> proofs i
-                   Success (Right Quit) -> iPrintError "Init scripts cannot quit Idris"
-                   Success (Right cmd ) -> process [] cmd
-                   Success (Left err) -> runIO $ print err
+                   Failure (ErrInfo err _)       -> runIO $ print (fixColour clr err)
+                   Success (Right Reload)        -> iPrintError "Init scripts cannot reload the file"
+                   Success (Right (Load _ _))    -> iPrintError "Init scripts cannot load files"
+                   Success (Right (ModImport _)) -> iPrintError "Init scripts cannot import modules"
+                   Success (Right Edit)          -> iPrintError "Init scripts cannot invoke the editor"
+                   Success (Right Proofs)        -> proofs i
+                   Success (Right Quit)          -> iPrintError "Init scripts cannot quit Idris"
+                   Success (Right cmd')          -> process [] cmd'
+                   Success (Left err)            -> runIO $ print err

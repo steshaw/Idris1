@@ -5,41 +5,41 @@ Copyright   :
 License     : BSD3
 Maintainer  : The Idris Community.
 -}
-{-# LANGUAGE CPP, GeneralizedNewtypeDeriving, ConstraintKinds #-}
-{-# LANGUAGE PatternGuards, StandaloneDeriving                 #-}
+
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE NoImplicitPrelude #-}
+{-# LANGUAGE ConstraintKinds #-}
+{-# LANGUAGE CPP #-}
+{-# LANGUAGE PatternGuards #-}
+{-# LANGUAGE StandaloneDeriving #-}
+
 #if !(MIN_VERSION_base(4,8,0))
 {-# LANGUAGE OverlappingInstances #-}
 #endif
+
 module Idris.Parser.Helpers where
 
-import Prelude hiding (pi)
-
-import Text.Trifecta.Delta
-import Text.Trifecta hiding (span, stringLiteral, charLiteral, natural, symbol, char, string, whiteSpace, Err)
-import Text.Parser.LookAhead
-import Text.Parser.Expression
-import qualified Text.Parser.Token as Tok
-import qualified Text.Parser.Char as Chr
-import qualified Text.Parser.Token.Highlight as Hi
-
+import Idris.Prelude hiding (pi)
 import Idris.AbsSyntax
-
 import Idris.Core.TT
+  ( Name(..), sUN, sNS
+  , addDef -- Context function
+  , Err, Err'(..)
+  , FC(..), FC'(..), spanFC
+  , OutputAnnotation(..)
+  )
 import Idris.Core.Evaluate
 import Idris.Delaborate (pprintErr)
 import Idris.Docstrings
 import Idris.Output (iWarn)
 
-import qualified Util.Pretty as Pretty (text)
-
 import Control.Applicative
 import Control.Monad
-import Control.Monad.State.Strict
+import Control.Monad.State.Strict (StateT(..), lift, get, put, evalStateT)
 
 import Data.Maybe
-import qualified Data.List.Split as Spl
+import Data.Monoid (Monoid)
 import Data.List
-import Data.Monoid
 import Data.Char
 import qualified Data.Map as M
 import qualified Data.HashSet as HS
@@ -48,13 +48,28 @@ import qualified Data.ByteString.UTF8 as UTF8
 
 import System.FilePath
 
-import Debug.Trace
+import Text.Trifecta.Delta (Delta(..), column)
+import Text.Trifecta
+  ( Parser, Result, DeltaParsing(..), TokenParsing
+  , CharParsing, Parsing, MarkParsing
+  , IdentifierStyle(..)
+  , parseString, try, eof, satisfy , (<?>), choice
+  , skipSome, skipMany, noneOf, oneOf, option, notFollowedBy
+  , spaces, someSpace, token, unexpected, sepBy1
+  )
+import Text.Parser.LookAhead (LookAheadParsing, lookAhead)
+import qualified Text.Parser.Token as Tok
+import qualified Text.Parser.Char as Chr
+import qualified Text.Parser.Token.Highlight as Hi
+
 
 -- | Idris parser with state used during parsing
 type IdrisParser = StateT IState IdrisInnerParser
 
 newtype IdrisInnerParser a = IdrisInnerParser { runInnerParser :: Parser a }
-  deriving (Monad, Functor, MonadPlus, Applicative, Alternative, CharParsing, LookAheadParsing, DeltaParsing, MarkParsing Delta, Monoid, TokenParsing)
+  deriving ( Monad, Functor, MonadPlus, Applicative, Alternative, CharParsing, LookAheadParsing
+           , DeltaParsing, MarkParsing Delta, Monoid, TokenParsing
+           )
 
 deriving instance Parsing IdrisInnerParser
 
@@ -80,8 +95,8 @@ instance TokenParsing IdrisParser where
 #endif
   someSpace = many (simpleWhiteSpace <|> singleLineComment <|> multiLineComment) *> pure ()
   token p = do s <- get
-               (FC fn (sl, sc) _) <- getFC --TODO: Update after fixing getFC
-                                           -- See Issue #1594
+               (FC _ (sl, sc) _) <- getFC -- TODO: Update after fixing getFC.
+                                          -- TODO: See Issue #1594.
                r <- p
                (FC fn _ (el, ec)) <- getFC
                whiteSpace
@@ -109,7 +124,7 @@ highlightP fc annot = do ist <- get
 noDocCommentHere :: String -> IdrisParser ()
 noDocCommentHere msg =
   optional (do fc <- getFC
-               docComment
+               _ <- docComment
                ist <- get
                put ist { parserWarnings = (fc, Msg msg) : parserWarnings ist}) *>
   pure ()
@@ -204,16 +219,16 @@ multiLineComment =     try (string "{-" *> (string "-}") *> pure ())
 docComment :: IdrisParser (Docstring (), [(Name, Docstring ())])
 docComment = do dc <- pushIndent *> docCommentLine
                 rest <- many (indented docCommentLine)
-                args <- many $ do (name, first) <- indented argDocCommentLine
-                                  rest <- many (indented docCommentLine)
-                                  return (name, concat (intersperse "\n" (first:rest)))
+                args <- many $ do (nm, first) <- indented argDocCommentLine
+                                  rest' <- many (indented docCommentLine)
+                                  return (nm, concat (intersperse "\n" (first:rest')))
                 popIndent
                 return (parseDocstring $ T.pack (concat (intersperse "\n" (dc:rest))),
                         map (\(n, d) -> (n, parseDocstring (T.pack d))) args)
 
   where docCommentLine :: MonadicParsing m => m String
-        docCommentLine = try (do string "|||"
-                                 many (satisfy (==' '))
+        docCommentLine = try (do _ <- string "|||"
+                                 skipMany (satisfy (==' '))
                                  contents <- option "" (do first <- satisfy (\c -> not (isEol c || c == '@'))
                                                            res <- many (satisfy (not . isEol))
                                                            return $ first:res)
@@ -221,12 +236,12 @@ docComment = do dc <- pushIndent *> docCommentLine
                                  return contents)-- ++ concat rest))
                         <?> ""
 
-        argDocCommentLine = do string "|||"
-                               many (satisfy isSpace)
-                               char '@'
-                               many (satisfy isSpace)
+        argDocCommentLine = do _ <- string "|||"
+                               skipMany (satisfy isSpace)
+                               _ <- char '@'
+                               skipMany (satisfy isSpace)
                                n <- fst <$> name
-                               many (satisfy isSpace)
+                               skipMany (satisfy isSpace)
                                docs <- many (satisfy (not . isEol))
                                eol ; someSpace
                                return (n, docs)
@@ -305,7 +320,7 @@ symbol = Tok.symbol
 
 symbolFC :: MonadicParsing m => String -> m FC
 symbolFC str = do (FC file (l, c) _) <- getFC
-                  Tok.symbol str
+                  _ <- Tok.symbol str
                   return $ FC file (l, c) (l, c + length str)
 
 -- | Parses a reserved identifier
@@ -326,14 +341,14 @@ reservedHL str = reservedFC str >>= flip highlightP AnnKeyword
 -- Taken from Parsec (c) Daan Leijen 1999-2001, (c) Paolo Martini 2007
 -- | Parses a reserved operator
 reservedOp :: MonadicParsing m => String -> m ()
-reservedOp name = token $ try $
-  do string name
-     notFollowedBy (operatorLetter) <?> ("end of " ++ show name)
+reservedOp nm = token $ try $
+  do _ <- string nm
+     notFollowedBy (operatorLetter) <?> ("end of " ++ show nm)
 
 reservedOpFC :: MonadicParsing m => String -> m FC
-reservedOpFC name = do (FC f (l, c) _) <- getFC
-                       reservedOp name
-                       return (FC f (l, c) (l, c + length name))
+reservedOpFC nm = do (FC f (l, c) _) <- getFC
+                     reservedOp nm
+                     return (FC f (l, c) (l, c + length nm))
 
 -- | Parses an identifier as a token
 identifier :: (MonadicParsing m) => m (String, FC)
@@ -345,19 +360,19 @@ identifier = try(do (i, fc) <-
                     return (i, fc))
 
 -- | Parses an identifier with possible namespace as a name
-iName :: (MonadicParsing m, HasLastTokenSpan m) => [String] -> m (Name, FC)
+iName :: MonadicParsing m => [String] -> m (Name, FC)
 iName bad = do (n, fc) <- maybeWithNS identifier False bad
                return (n, fc)
             <?> "name"
 
 -- | Parses an string possibly prefixed by a namespace
-maybeWithNS :: (MonadicParsing m, HasLastTokenSpan m) => m (String, FC) -> Bool -> [String] -> m (Name, FC)
-maybeWithNS parser ascend bad = do
-  fc <- getFC
+maybeWithNS :: MonadicParsing m => m (String, FC) -> Bool -> [String] -> m (Name, FC)
+maybeWithNS p ascend bad = do
+  _ <- getFC
   i <- option "" (lookAhead (fst <$> identifier))
   when (i `elem` bad) $ unexpected "reserved identifier"
   let transf = if ascend then id else reverse
-  (x, xs, fc) <- choice (transf (parserNoNS parser : parsersNS parser i))
+  (x, xs, fc) <- choice (transf (parserNoNS p : parsersNS p i))
   return (mkName (x, xs), fc)
   where parserNoNS :: MonadicParsing m => m (String, FC) -> m (String, String, FC)
         parserNoNS parser = do startFC <- getFC
@@ -366,7 +381,7 @@ maybeWithNS parser ascend bad = do
         parserNS   :: MonadicParsing m => m (String, FC) -> String -> m (String, String, FC)
         parserNS   parser ns = do startFC <- getFC
                                   xs <- string ns
-                                  lchar '.';  (x, nameFC) <- parser
+                                  _ <- lchar '.';  (x, nameFC) <- parser
                                   return (x, xs, spanFC startFC nameFC)
         parsersNS  :: MonadicParsing m => m (String, FC) -> String -> [m (String, String, FC)]
         parsersNS parser i = [try (parserNS parser ns) | ns <- (initsEndAt (=='.') i)]
@@ -381,14 +396,14 @@ name = (<?> "name") $ do
   where
     unalias :: M.Map [T.Text] [T.Text] -> Name -> Name
     unalias aliases (NS n ns) | Just ns' <- M.lookup ns aliases = NS n ns'
-    unalias aliases name = name
+    unalias _       nm = nm
 
 {- | List of all initial segments in ascending order of a list.  Every
 such initial segment ends right before an element satisfying the given
 condition.
 -}
 initsEndAt :: (a -> Bool) -> [a] -> [[a]]
-initsEndAt p [] = []
+initsEndAt _ [] = []
 initsEndAt p (x:xs) | p x = [] : x_inits_xs
                     | otherwise = x_inits_xs
   where x_inits_xs = [x : cs | cs <- initsEndAt p xs]
@@ -400,7 +415,7 @@ initsEndAt p (x:xs) | p x = [] : x_inits_xs
 mkName :: (String, String) -> Name
 mkName (n, "") = sUN n
 mkName (n, ns) = sNS (sUN n) (reverse (parseNS ns))
-  where parseNS x = case span (/= '.') x of
+  where parseNS nm = case span (/= '.') nm of
                       (x, "")    -> [x]
                       (x, '.':y) -> x : parseNS y
 
@@ -460,7 +475,7 @@ getFC = do s <- position
 {-* Syntax helpers-}
 -- | Bind constraints to term
 bindList :: (Name -> FC -> PTerm -> PTerm -> PTerm) -> [(Name, FC, PTerm)] -> PTerm -> PTerm
-bindList b []              sc = sc
+bindList _ []              sc = sc
 bindList b ((n, fc, t):bs) sc = b n fc t (bindList b bs sc)
 
 {- | @commaSeparated p@ parses one or more occurences of `p`,
@@ -481,7 +496,7 @@ popIndent :: IdrisParser ()
 popIndent = do ist <- get
                case indent_stack ist of
                  [] -> error "The impossible happened! Tried to pop an indentation level where none was pushed (underflow)."
-                 (x : xs) -> put (ist { indent_stack = xs })
+                 (_ : xs) -> put (ist { indent_stack = xs })
 
 
 -- | Gets current indentation
@@ -492,8 +507,8 @@ indent = liftM ((+1) . fromIntegral . column) position
 lastIndent :: IdrisParser Int
 lastIndent = do ist <- get
                 case indent_stack ist of
-                  (x : xs) -> return x
-                  _        -> return 1
+                  (x : _) -> return x
+                  _       -> return 1
 
 -- | Applies parser in an indented position
 indented :: IdrisParser a -> IdrisParser a
@@ -534,7 +549,7 @@ lookAheadMatches p = do match <- lookAhead (optional p)
 
 -- | Parses a start of block
 openBlock :: IdrisParser ()
-openBlock =     do lchar '{'
+openBlock =     do _ <- lchar '{'
                    ist <- get
                    put (ist { brace_stack = Nothing : brace_stack ist })
             <|> do ist <- get
@@ -569,7 +584,7 @@ closeBlock = do ist <- get
 
 -- | Parses a terminator
 terminator :: IdrisParser ()
-terminator =     do lchar ';'; popIndent
+terminator =     do _ <- lchar ';'; popIndent
              <|> do c <- indent; l <- lastIndent
                     if c <= l then popIndent else fail "not a terminator"
              <|> do isParen <- lookAheadMatches (oneOf ")}")
@@ -578,7 +593,7 @@ terminator =     do lchar ';'; popIndent
 
 -- | Parses and keeps a terminator
 keepTerminator :: IdrisParser ()
-keepTerminator =  do lchar ';'; return ()
+keepTerminator =  do _ <- lchar ';'; return ()
               <|> do c <- indent; l <- lastIndent
                      unless (c <= l) $ fail "not a terminator"
               <|> do isParen <- lookAheadMatches (oneOf ")}|")
@@ -595,10 +610,10 @@ notEndApp = do c <- indent; l <- lastIndent
 notEndBlock :: IdrisParser ()
 notEndBlock = do ist <- get
                  case brace_stack ist of
-                      Just lvl : xs -> do i <- indent
-                                          isParen <- lookAheadMatches (char ')')
-                                          when (i < lvl || isParen) (fail "end of block")
-                      _ -> return ()
+                      Just lvl : _ -> do i <- indent
+                                         isParen <- lookAheadMatches (char ')')
+                                         when (i < lvl || isParen) (fail "end of block")
+                      _            -> return ()
 
 -- | Representation of an operation that can compare the current indentation with the last indentation, and an error message if it fails
 data IndentProperty = IndentProperty (Int -> Int -> Bool) String
@@ -678,8 +693,8 @@ addAcc n a = do i <- get
 {- | Add accessbility option for data declarations
  (works for interfaces too - 'abstract' means the data/interface is visible but members not) -}
 accData :: Accessibility -> Name -> [Name] -> IdrisParser ()
-accData Frozen n ns = do addAcc n Public -- so that it can be used in public definitions
-                         mapM_ (\n -> addAcc n Private) ns -- so that they are invisible
+accData Frozen nm ns = do addAcc nm Public -- so that it can be used in public definitions
+                          mapM_ (\n -> addAcc n Private) ns -- so that they are invisible
 accData a n ns = do addAcc n a
                     mapM_ (`addAcc` a) ns
 
@@ -691,22 +706,21 @@ fixErrorMsg msg fixes = msg ++ ", possible fixes:\n" ++ (concat $ intersperse "\
 
 -- | Collect 'PClauses' with the same function name
 collect :: [PDecl] -> [PDecl]
-collect (c@(PClauses _ o _ _) : ds)
-    = clauses (cname c) [] (c : ds)
+collect (c@(PClauses _ o _ _) : decls) = clauses (cname c) [] (c : decls)
   where clauses :: Maybe Name -> [PClause] -> [PDecl] -> [PDecl]
-        clauses j@(Just n) acc (PClauses fc _ _ [PClause fc' n' l ws r w] : ds)
+        clauses j@(Just n) acc (PClauses _ _ _ [PClause fc' n' l ws r w] : ds)
            | n == n' = clauses j (PClause fc' n' l ws r (collect w) : acc) ds
-        clauses j@(Just n) acc (PClauses fc _ _ [PWith fc' n' l ws r pn w] : ds)
+        clauses j@(Just n) acc (PClauses _ _ _ [PWith fc' n' l ws r pn w] : ds)
            | n == n' = clauses j (PWith fc' n' l ws r pn (collect w) : acc) ds
         clauses (Just n) acc xs = PClauses (fcOf c) o n (reverse acc) : collect xs
-        clauses Nothing acc (x:xs) = collect xs
-        clauses Nothing acc [] = []
+        clauses Nothing _   (_:xs) = collect xs
+        clauses Nothing _   [] = []
 
         cname :: PDecl -> Maybe Name
-        cname (PClauses fc _ _ [PClause _ n _ _ _ _]) = Just n
-        cname (PClauses fc _ _ [PWith   _ n _ _ _ _ _]) = Just n
-        cname (PClauses fc _ _ [PClauseR _ _ _ _]) = Nothing
-        cname (PClauses fc _ _ [PWithR _ _ _ _ _]) = Nothing
+        cname (PClauses _ _ _ [PClause _ n _ _ _ _]) = Just n
+        cname (PClauses _ _ _ [PWith   _ n _ _ _ _ _]) = Just n
+        cname (PClauses _ _ _ [PClauseR _ _ _ _]) = Nothing
+        cname (PClauses _ _ _ [PWithR _ _ _ _ _]) = Nothing
         fcOf :: PDecl -> FC
         fcOf (PClauses fc _ _ _) = fc
 collect (PParams f ns ps : ds) = PParams f ns (collect ps) : collect ds

@@ -5,23 +5,26 @@ Copyright   :
 License     : BSD3
 Maintainer  : The Idris Community.
 -}
+
+{-# OPTIONS_GHC -Wall #-}
 {-# LANGUAGE PatternGuards #-}
 
-module Idris.ErrReverse(errReverse) where
+module Idris.ErrReverse (errReverse) where
 
-import Idris.AbsSyntax
+import Idris.AbsSyntaxTree (IState(idris_errRev))
 import Idris.Core.TT
-import Util.Pretty
+  ( Term, TT(Bind, P, App), Binder(PVar), NameType(Ref)
+  , instantiate, substNames
+  )
 
-import Data.List
-import Debug.Trace
+import Data.List (nub)
 
 -- | For display purposes, apply any 'error reversal' transformations
 -- so that errors will be more readable
 errReverse :: IState -> Term -> Term
-errReverse ist t = rewrite 5 t -- (elideLambdas t)
+errReverse ist tm = rewrite 5 tm -- (elideLambdas t)
   where
-
+    rewrite :: Int -> Term -> Term
     rewrite 0 t = t
     rewrite n t = let t' = foldl applyRule t (reverse (idris_errRev ist)) in
                       if t == t' then t
@@ -47,7 +50,7 @@ errReverse ist t = rewrite 5 t -- (elideLambdas t)
     matchTerm ns l r (Bind n b sc) = let b' = fmap (matchTerm ns l r) b
                                          sc' = matchTerm ns l r sc in
                                          Bind n b' sc'
-    matchTerm ns l r t = t
+    matchTerm _  _ _ t = t
 
     match ns l t = do ms <- match' ns l t
                       combine (nub ms)
@@ -64,14 +67,13 @@ errReverse ist t = rewrite 5 t -- (elideLambdas t)
                                              as <- match' ns a a'
                                              Just (fs ++ as)
     -- no matching Binds, for now...
-    match' ns x y = if x == y then Just [] else Nothing
+    match' _  x y = if x == y then Just [] else Nothing
 
     -- if the term under a lambda is huge, there's no much point in showing
     -- it as it won't be very enlightening.
-
-    elideLambdas (App s f a) = App s (elideLambdas f) (elideLambdas a)
-    elideLambdas (Bind n (Lam t) sc)
-       | size sc > 200 = P Ref (sUN "...") Erased
-    elideLambdas (Bind n b sc)
-       = Bind n (fmap elideLambdas b) (elideLambdas sc)
-    elideLambdas t = t
+--    elideLambdas (App s f a) = App s (elideLambdas f) (elideLambdas a)
+--    elideLambdas (Bind n (Lam t) sc)
+--       | size sc > 200 = P Ref (sUN "...") Erased
+--    elideLambdas (Bind n b sc)
+--       = Bind n (fmap elideLambdas b) (elideLambdas sc)
+--    elideLambdas t = t

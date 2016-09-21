@@ -6,10 +6,12 @@ License     : BSD3
 Maintainer  : The Idris Community.
 -}
 
+{-# LANGUAGE NoImplicitPrelude #-}
 {-# LANGUAGE PatternGuards #-}
 
 module Idris.Elab.Clause where
 
+import Idris.Prelude hiding (id, (.))
 import Idris.AbsSyntax
   ( getIState, putIState, updateIState, getContext, setContext
   , getOptimise, getErasureInfo, getAllNames, coverage, getFromHideList
@@ -46,6 +48,7 @@ import Idris.ASTUtils
   ( fgetState, fmodifyState
   , opt_inaccessible, ist_optimisation
   )
+import Idris.DeepSeq ()
 import Idris.Error
 import Idris.Delaborate
 import Idris.Elab.Term
@@ -69,7 +72,6 @@ import Idris.Core.Typecheck
 
 import Idris.Docstrings hiding (Unchecked)
 
-import Prelude hiding (id, (.), (<$>))
 import Control.Category
 import Control.Applicative hiding (Const)
 import Control.DeepSeq

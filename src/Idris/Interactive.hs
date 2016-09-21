@@ -6,6 +6,8 @@ License     : BSD3
 Maintainer  : The Idris Community.
 -}
 
+{-# OPTIONS_GHC -Wall #-}
+{-# LANGUAGE NoImplicitPrelude #-}
 {-# LANGUAGE PatternGuards #-}
 
 module Idris.Interactive(
@@ -14,10 +16,25 @@ module Idris.Interactive(
   , makeLemma
   ) where
 
-import Idris.Core.TT
+import Idris.Prelude
+import Idris.Core.TT hiding (arity, envlen, nsroot)
 import Idris.Core.Evaluate
 import Idris.CaseSplit
 import Idris.AbsSyntax
+  ( getIState, getContext
+  , getIndentWith
+  , getInternalApp
+  , runIO
+  , logLvl
+  )
+import Idris.AbsSyntaxTree
+  ( PTerm(..), PDecl'(..), PArg'(..), PTactic'(..)
+  , PClause'(..), mapPT, allNamesIn
+  , PPOption(..) , pprintPTerm, defaultPPOption, showTmOpts
+  , OutputMode(..)
+  , ElabWhat(EAll)
+  , Idris, IState(..)
+  )
 import Idris.ElabDecls
 import Idris.Error
 import Idris.ErrReverse
@@ -27,13 +44,14 @@ import Idris.IdeMode hiding (IdeModeCommand(..))
 import Idris.Elab.Value
 import Idris.Elab.Term
 
-import Util.Pretty
+import Util.Pretty (displayS, renderPretty)
 import Util.System
 
-import System.Directory
-import System.IO
-import Data.Char
+import System.Directory (copyFile)
+import System.IO (hPutStrLn)
+import Data.Char (isSpace)
 import Data.List (isSuffixOf)
+
 
 caseSplitAt :: FilePath -> Bool -> Int -> Name -> Idris ()
 caseSplitAt fn updatefile l n
@@ -51,7 +69,7 @@ caseSplitAt fn updatefile l n
             iPrintResult new
 
 addClauseFrom :: FilePath -> Bool -> Int -> Name -> Idris ()
-addClauseFrom fn updatefile l n = do
+addClauseFrom fn updatefile l nm = do
 {-
     runIO . traceIO $ "addClauseFrom: " ++ show (M.fromList
       [ ("fn", fn)
@@ -63,21 +81,21 @@ addClauseFrom fn updatefile l n = do
     -- if a definition already exists, add missing cases rather than
     -- adding a new definition.
     ist <- getIState
-    cl <- getInternalApp fn l
---    runIO . traceIO $ "cl = " ++ show cl
-    let fulln = getAppName cl
+    clause <- getInternalApp fn l
+--    runIO . traceIO $ "cl = " ++ show clause
+    let fulln = getAppName clause
 --    runIO . traceIO $ "fulln = " ++ show fulln
 
     let metavars = lookup fulln (idris_metavars ist)
 --    runIO . traceIO $ "metavars = " ++ show metavars
     case metavars of
-      Nothing -> addMissing fn updatefile l n
+      Nothing -> addMissing fn updatefile l nm
       Just _ -> do
         src <- runIO $ readSource fn
         let (before, tyline : later) = splitAt (l-1) (lines src)
-        let indent = getIndent 0 (show n) tyline
+        let indent = getIndent 0 (show nm) tyline
 --        runIO . traceIO $ "getIndent => " ++ show indent
-        cl <- getClause l fulln n fn
+        cl <- getClause l fulln nm fn
         -- add clause before first blank line in 'later'
         let (nonblank, rest) = span (not . all isSpace) (tyline:later)
         if updatefile
@@ -89,22 +107,22 @@ addClauseFrom fn updatefile l n = do
                   runIO $ copyFile fb fn
           else iPrintResult cl
   where
-    getIndent i n [] = 0
-    getIndent i n xs | take 9 xs == "implementation " = i
+    getIndent _ _ [] = 0
+    getIndent i _ xs | take 9 xs == "implementation " = i
     getIndent i n xs | take (length n) xs == n = i
-    getIndent i n (x : xs) = getIndent (i + 1) n xs
+    getIndent i n (_ : xs) = getIndent (i + 1) n xs
 
     getAppName (PApp _ r _) = getAppName r
     getAppName (PRef _ _ r) = r
     getAppName (PTyped n _) = getAppName n
-    getAppName _ = n
+    getAppName _ = nm
 
 addProofClauseFrom :: FilePath -> Bool -> Int -> Name -> Idris ()
-addProofClauseFrom fn updatefile l n
+addProofClauseFrom fn updatefile l nm
    = do src <- runIO $ readSource fn
         let (before, tyline : later) = splitAt (l-1) (lines src)
-        let indent = getIndent 0 (show n) tyline
-        cl <- getProofClause l n fn
+        let indent = getIndent 0 (show nm) tyline
+        cl <- getProofClause l nm fn
         -- add clause before first blank line in 'later'
         let (nonblank, rest) = span (not . all isSpace) (tyline:later)
         if updatefile
@@ -116,15 +134,15 @@ addProofClauseFrom fn updatefile l n
                   runIO $ copyFile fb fn
           else iPrintResult cl
     where
-       getIndent i n [] = 0
+       getIndent _ _ [] = 0
        getIndent i n xs | take (length n) xs == n = i
-       getIndent i n (x : xs) = getIndent (i + 1) n xs
+       getIndent i n (_ : xs) = getIndent (i + 1) n xs
 
 addMissing :: FilePath -> Bool -> Int -> Name -> Idris ()
-addMissing fn updatefile l n
+addMissing fn updatefile l name
    = do src <- runIO $ readSource fn
         let (before, tyline : later) = splitAt (l-1) (lines src)
-        let indent = getIndent 0 (show n) tyline
+        let indent = getIndent 0 (show name) tyline
         i <- getIState
         cl <- getInternalApp fn l
         let n' = getAppName cl
@@ -132,7 +150,7 @@ addMissing fn updatefile l n
         extras <- case lookupCtxtExact n' (idris_patdefs i) of
                        Nothing -> return ""
                        Just (_, tms) -> do tms' <- nameMissing tms
-                                           showNew (show n ++ "_rhs") 1 indent tms'
+                                           showNew (show name ++ "_rhs") 1 indent tms'
         let (nonblank, rest) = span (not . all isSpace) (tyline:later)
         if updatefile
           then do let fb = fn ++ "~"
@@ -154,11 +172,12 @@ addMissing fn updatefile l n
           getAppName (PApp _ r _) = getAppName r
           getAppName (PRef _ _ r) = r
           getAppName (PTyped n _) = getAppName n
-          getAppName _ = n
+          getAppName _ = name
 
           makeIndent ind | ".lidr" `isSuffixOf` fn = '>' : ' ' : replicate (ind-2) ' '
                          | otherwise               = replicate ind ' '
 
+          showNew :: String -> Integer -> Int -> [PTerm] -> Idris String
           showNew nm i ind (tm : tms)
                         = do (nm', i') <- getUniq nm i
                              rest <- showNew nm i' ind tms
@@ -166,17 +185,17 @@ addMissing fn updatefile l n
                                      showPat tm ++ " = ?" ++ nm' ++
                                      (if null rest then "" else
                                          "\n" ++ rest))
-          showNew nm i _ [] = return ""
+          showNew _  _ _ [] = return ""
 
-          getIndent i n [] = 0
+          getIndent _ _ [] = 0
           getIndent i n xs | take (length n) xs == n = i
-          getIndent i n (x : xs) = getIndent (i + 1) n xs
+          getIndent i n (_ : xs) = getIndent (i + 1) n xs
 
 
 makeWith :: FilePath -> Bool -> Int -> Name -> Idris ()
 makeWith fn updatefile l n = do
   src <- runIO $ readSource fn
-  i <- getIState
+--  i <- getIState
   indentWith <- getIndentWith
   let (before, tyline : later) = splitAt (l-1) (lines src)
   let ind = getIndent tyline
@@ -198,10 +217,10 @@ makeWith fn updatefile l n = do
 -- Replace the given metavariable on the given line with a 'case'
 -- block, using a _ for the scrutinee
 makeCase :: FilePath -> Bool -> Int -> Name -> Idris ()
-makeCase fn updatefile l n
+makeCase fn updatefile lineNum nm
    = do src <- runIO $ readSource fn
-        let (before, tyline : later) = splitAt (l-1) (lines src)
-        let newcase = addCaseSkel (show n) tyline
+        let (before, tyline : later) = splitAt (lineNum-1) (lines src)
+        let newcase = addCaseSkel (show nm) tyline
 
         if updatefile then
            do let fb = fn ++ "~"
@@ -220,17 +239,17 @@ makeCase fn updatefile l n
 
         -- Assume case needs to be bracketed unless the metavariable is
         -- on its own after an =
-        brackets eq line | line == '?' : show n = not eq
-        brackets eq ('=':ls) = brackets True ls
+        brackets eq line | line == '?' : show nm = not eq
+        brackets _  ('=':ls) = brackets True ls
         brackets eq (' ':ls) = brackets eq ls
-        brackets eq (l : ls) = brackets False ls
-        brackets eq [] = True
+        brackets _  (_ : ls) = brackets False ls
+        brackets _  [] = True
 
         findSubstr n xs = findSubstr' [] 0 n xs
 
         findSubstr' acc i n xs | take (length n) xs == n
                 = Just (reverse acc, i, drop (length n) xs)
-        findSubstr' acc i n [] = Nothing
+        findSubstr' _   _ _ [] = Nothing
         findSubstr' acc i n (x : xs) = findSubstr' (x : acc) (i + 1) n xs
 
 
@@ -238,18 +257,18 @@ doProofSearch :: FilePath -> Bool -> Bool ->
                  Int -> Name -> [Name] -> Maybe Int -> Idris ()
 doProofSearch fn updatefile rec l n hints Nothing
     = doProofSearch fn updatefile rec l n hints (Just 20)
-doProofSearch fn updatefile rec l n hints (Just depth)
+doProofSearch fn updatefile rec l nm hints (Just depth)
     = do src <- runIO $ readSource fn
          let (before, tyline : later) = splitAt (l-1) (lines src)
-         ctxt <- getContext
-         mn <- case lookupNames n ctxt of
+         context <- getContext
+         mn <- case lookupNames nm context of
                     [x] -> return x
-                    [] -> return n
+                    [] -> return nm
                     ns -> ierror (CantResolveAlts ns)
-         i <- getIState
+         ist <- getIState
          let (top, envlen, psnames)
-              = case lookup mn (idris_metavars i) of
-                     Just (t, e, ns, False, d) -> (t, e, ns)
+              = case lookup mn (idris_metavars ist) of
+                     Just (t, e, ns, False, _) -> (t, e, ns)
                      _ -> (Nothing, 0, [])
          let fc = fileFC fn
          let body t = PProof [Try (TSeq Intros (ProofSearch rec False depth t psnames hints))
@@ -257,7 +276,7 @@ doProofSearch fn updatefile rec l n hints (Just depth)
          let def = PClause fc mn (PRef fc [] mn) [] (body top) []
          newmv_pre <- idrisCatch
              (do elabDecl' EAll (recinfo (fileFC "proofsearch")) (PClauses fc [] mn [def])
-                 (tm, ty) <- elabVal (recinfo (fileFC "proofsearch")) ERHS (PRef fc [] mn)
+                 (tm, _) <- elabVal (recinfo (fileFC "proofsearch")) ERHS (PRef fc [] mn)
                  ctxt <- getContext
                  i <- getIState
                  return . flip displayS "" . renderPretty 1.0 80 $
@@ -265,12 +284,12 @@ doProofSearch fn updatefile rec l n hints (Just depth)
                      (stripNS
                         (dropCtxt envlen
                            (delab i (fst (specialise ctxt [] [(mn, 1)] tm))))))
-             (\e -> return ("?" ++ show n))
-         let newmv = guessBrackets False tyline (show n) newmv_pre
+             (\_ -> return ("?" ++ show nm))
+         let newmv = guessBrackets False tyline (show nm) newmv_pre
          if updatefile then
             do let fb = fn ++ "~"
                runIO $ writeSource fb (unlines before ++
-                                     updateMeta tyline (show n) newmv ++ "\n"
+                                       updateMeta tyline (show nm) newmv ++ "\n"
                                        ++ unlines later)
                runIO $ copyFile fb fn
             else iPrintResult newmv
@@ -288,44 +307,46 @@ doProofSearch fn updatefile rec l n hints (Just depth)
           nsroot (SN (WhereN _ _ n)) = nsroot n
           nsroot n = n
 
-updateMeta ('?':cs) n new
-    | length cs >= length n
-      = case splitAt (length n) cs of
+updateMeta :: String -> String -> String -> String
+updateMeta ('?':as) n new
+    | length as >= length n
+      = case splitAt (length n) as of
              (mv, c:cs) ->
                   if ((isSpace c || c == ')' || c == '}') && mv == n)
                      then new ++ (c : cs)
                      else '?' : mv ++ c : updateMeta cs n new
              (mv, []) -> if (mv == n) then new else '?' : mv
 updateMeta ('=':'>':cs) n new = '=':'>':updateMeta cs n new
-updateMeta ('=':cs) n new = '=':updateMeta cs n new
-updateMeta (c:cs) n new
-  = c : updateMeta cs n new
-updateMeta [] n new = ""
+updateMeta ('=':cs) n new     = '=':updateMeta cs n new
+updateMeta (c:cs) n new       = c : updateMeta cs n new
+updateMeta [] _ _ = ""
 
-guessBrackets brack ('?':cs) n new
-    | length cs >= length n
-      = case splitAt (length n) cs of
+guessBrackets :: Bool -> String -> String -> String -> String
+guessBrackets brack ('?':as) n new
+    | length as >= length n
+      = case splitAt (length n) as of
              (mv, c:cs) ->
                   if ((isSpace c || c == ')' || c == '}') && mv == n)
                      then addBracket brack new
                      else guessBrackets True cs n new
              (mv, []) -> if (mv == n) then addBracket brack new else '?' : mv
-guessBrackets brack ('=':'>':cs) n new = guessBrackets False cs n new
-guessBrackets brack ('-':'>':cs) n new = guessBrackets False cs n new
-guessBrackets brack ('=':cs) n new = guessBrackets False cs n new
-guessBrackets brack (c:cs) n new
-  = guessBrackets (brack || not (isSpace c)) cs n new
-guessBrackets brack [] n new = ""
+guessBrackets _     ('=':'>':cs) n new = guessBrackets False cs n new
+guessBrackets _     ('-':'>':cs) n new = guessBrackets False cs n new
+guessBrackets _     ('=':cs) n new     = guessBrackets False cs n new
+guessBrackets brack (c:cs) n new       = guessBrackets (brack || not (isSpace c)) cs n new
+guessBrackets _ [] _ _                 = ""
 
-checkProv line n = isProv' False line n
+checkProv :: String -> String -> Bool
+checkProv line name = isProv' False line name
   where
     isProv' p cs n | take (length n) cs == n = p
     isProv' _ ('?':cs) n = isProv' False cs n
     isProv' _ ('{':cs) n = isProv' True cs n
     isProv' _ ('}':cs) n = isProv' True cs n
-    isProv' p (_:cs) n = isProv' p cs n
-    isProv' _ [] n = False
+    isProv' p (_:cs)   n = isProv' p cs n
+    isProv' _ []       _ = False
 
+addBracket :: Bool -> String -> String
 addBracket False new = new
 addBracket True new@('(':xs) | last xs == ')' = new
 addBracket True new | any isSpace new = '(' : new ++ ")"
@@ -333,19 +354,19 @@ addBracket True new | any isSpace new = '(' : new ++ ")"
 
 
 makeLemma :: FilePath -> Bool -> Int -> Name -> Idris ()
-makeLemma fn updatefile l n
+makeLemma fn updatefile l nm
    = do src <- runIO $ readSource fn
         let (before, tyline : later) = splitAt (l-1) (lines src)
 
         -- if the name is in braces, rather than preceded by a ?, treat it
         -- as a lemma in a provisional definition
 
-        let isProv = checkProv tyline (show n)
+        let isProv = checkProv tyline (show nm)
 
         ctxt <- getContext
-        (fname, mty_full) <- case lookupTyName n ctxt of
+        (fname, mty_full) <- case lookupTyName nm ctxt of
                                   [t] -> return t
-                                  [] -> ierror (NoSuchVariable n)
+                                  [] -> ierror (NoSuchVariable nm)
                                   ns -> ierror (CantResolveAlts (map fst ns))
 
         i <- getIState
@@ -360,11 +381,11 @@ makeLemma fn updatefile l n
             let impty = stripMNBind skip margs (delab i mty)
             let interfaces = guessInterfaces i (tt_ctxt i) [] (allNamesIn impty) mty
 
-            let lem = show n ++ " : " ++
+            let lem = show nm ++ " : " ++
                             constraints i interfaces mty ++
                             showTmOpts (defaultPPOption { ppopt_pinames = True })
                                        impty
-            let lem_app = guessBrackets False tyline (show n) (show n ++ appArgs skip margs mty)
+            let lem_app = guessBrackets False tyline (show nm) (show nm ++ appArgs skip margs mty)
 
             if updatefile then
                do let fb = fn ++ "~"
@@ -382,8 +403,8 @@ makeLemma fn updatefile l n
                         in runIO . hPutStrLn h $ convSExp "return" good n
 
           else do -- provisional definition
-            let lem_app = show n ++ appArgs [] (-1) mty ++
-                                 " = ?" ++ show n ++ "_rhs"
+            let lem_app = show nm ++ appArgs [] (-1) mty ++
+                                  " = ?" ++ show nm ++ "_rhs"
             if updatefile then
                do let fb = fn ++ "~"
                   runIO $ writeSource fb (addProv before tyline lem_app later)
@@ -397,22 +418,21 @@ makeLemma fn updatefile l n
                                                                  StringAtom lem_app]]]
                         in runIO . hPutStrLn h $ convSExp "return" good n
 
-  where getIndent s = length (takeWhile isSpace s)
-
-        appArgs skip 0 _ = ""
+  where appArgs :: [Name] -> Int -> TT Name -> String
+        appArgs _    0 _ = ""
         appArgs skip i (Bind n@(UN c) (Pi _ _ _) sc)
            | (thead c /= '_' && n `notElem` skip)
                 = " " ++ show n ++ appArgs skip (i - 1) sc
         appArgs skip i (Bind _ (Pi _ _ _) sc) = appArgs skip (i - 1) sc
-        appArgs skip i _ = ""
+        appArgs _    _ _ = ""
 
         stripMNBind _ args t | args <= 0 = stripImp t
         stripMNBind skip args (PPi b n@(UN c) _ ty sc)
            | n `notElem` skip ||
                take 4 (str c) == "__pi" -- keep in type, but not in app
                 = PPi b n NoFC (stripImp ty) (stripMNBind skip (args - 1) sc)
-        stripMNBind skip args (PPi b _ _ ty sc) = stripMNBind skip (args - 1) sc
-        stripMNBind skip args t = stripImp t
+        stripMNBind skip args (PPi _ _ _ _ sc) = stripMNBind skip (args - 1) sc
+        stripMNBind _    _    t = stripImp t
 
         stripImp (PApp fc f as) = PApp fc (stripImp f) (map placeholderImp as)
           where
@@ -422,9 +442,9 @@ makeLemma fn updatefile l n
         stripImp t = t
 
         constraints :: IState -> [Name] -> Type -> String
-        constraints i [] ty = ""
+        constraints _ []  _  = ""
         constraints i [n] ty = showSep ", " (showConstraints i [n] ty) ++ " => "
-        constraints i ns ty = "(" ++ showSep ", " (showConstraints i ns ty) ++ ") => "
+        constraints i ns  ty = "(" ++ showSep ", " (showConstraints i ns ty) ++ ") => "
 
         showConstraints i ns (Bind n (Pi _ ty _) sc)
             | n `elem` ns = show (delab i ty) :
@@ -438,7 +458,7 @@ makeLemma fn updatefile l n
         -- Also, make interface implementations implicit
         guessImps :: IState -> Context -> Term -> [Name]
         -- machine names aren't lifted
-        guessImps ist ctxt (Bind n@(MN _ _) (Pi _ ty _) sc)
+        guessImps ist ctxt (Bind n@(MN _ _) (Pi _ _ _) sc)
            = n : guessImps ist ctxt sc
         guessImps ist ctxt (Bind n (Pi _ ty _) sc)
            | guarded ctxt n (substV (P Bound n Erased) sc)
@@ -448,7 +468,7 @@ makeLemma fn updatefile l n
            | paramty ty = n : guessImps ist ctxt sc
            | ignoreName n = n : guessImps ist ctxt sc
            | otherwise = guessImps ist ctxt sc
-        guessImps ist ctxt _ = []
+        guessImps _   _    _ = []
 
         paramty (TType _) = True
         paramty (Bind _ (Pi _ (TType _) _) sc) = paramty sc
@@ -461,20 +481,19 @@ makeLemma fn updatefile l n
 
         guessInterfaces :: IState -> Context -> [Name] -> [Name] -> Term -> [Name]
         guessInterfaces ist ctxt binders usednames (Bind n (Pi _ ty _) sc)
-           | isParamInterface ist ty && any (\x -> elem x usednames)
-                                            (paramNames binders ty)
+           | isParamInterface ist ty && any (\x -> elem x usednames) (paramNames binders ty)
                 = n : guessInterfaces ist ctxt (n : binders) usednames sc
            | otherwise = guessInterfaces ist ctxt (n : binders) usednames sc
-        guessInterfaces ist ctxt _ _ _ = []
+        guessInterfaces _   _    _ _ _ = []
 
-        paramNames bs ty | (P _ _ _, args) <- unApply ty
-             = vnames args
+        paramNames bs ty | (P _ _ _, args) <- unApply ty = vnames args
+                         | otherwise = error "Unexpected error: ty should be a Parameter"
           where vnames [] = []
                 vnames (V i : xs) | i < length bs = bs !! i : vnames xs
                 vnames (_ : xs) = vnames xs
 
         isInterface ist t
-           | (P _ n _, args) <- unApply t
+           | (P _ n _, _) <- unApply t
                 = case lookupCtxtExact n (idris_interfaces ist) of
                        Just _ -> True
                        _ -> False
@@ -489,7 +508,7 @@ makeLemma fn updatefile l n
           where isV (V _) = True
                 isV _ = False
 
-        guarded ctxt n (P _ n' _) | n == n' = True
+        guarded _    n (P _ n' _) | n == n' = True
         guarded ctxt n ap@(App _ _ _)
             | (P _ f _, args) <- unApply ap,
               isConName f ctxt = any (guarded ctxt n) args
@@ -497,7 +516,7 @@ makeLemma fn updatefile l n
 --             | thead cn /= '_' = guarded ctxt n t || guarded ctxt n sc
         guarded ctxt n (Bind _ (Pi _ t _) sc)
             = guarded ctxt n t || guarded ctxt n sc
-        guarded ctxt n _ = False
+        guarded _    _ _ = False
 
         blank = all isSpace
 
@@ -506,7 +525,7 @@ makeLemma fn updatefile l n
                        = case span (not . blank) (reverse before) of
                               (bef, []) -> (bef, [""])
                               x -> x
-                  mvline = updateMeta tyline (show n) lem_app in
+                  mvline = updateMeta tyline (show nm) lem_app in
                 unlines $ reverse bef_start ++
                           [blankline, lem, blankline] ++
                           reverse bef_end ++ mvline : later

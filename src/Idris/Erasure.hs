@@ -5,35 +5,41 @@ Copyright   :
 License     : BSD3
 Maintainer  : The Idris Community.
 -}
+
 {-# LANGUAGE PatternGuards #-}
 
 module Idris.Erasure (performUsageAnalysis, mkFieldName) where
 
 import Idris.AbsSyntax
-import Idris.ASTUtils
+  ( getIState
+  , logErasure
+  )
+import Idris.AbsSyntaxTree
+  ( pairCon
+  , Idris, IState(..)
+  , OptInfo(..)
+  , InterfaceInfo
+  , IOption(opt_cmdline)
+  , Opt(WarnReach)
+  )
+import Idris.ASTUtils (fputState, cg_usedpos, ist_callgraph)
 import Idris.Core.CaseTree
 import Idris.Core.TT
 import Idris.Core.Evaluate
 import Idris.Primitives
 import Idris.Error
 
-import Debug.Trace
-import System.IO.Unsafe
-
-import Control.Category
-import Prelude hiding (id, (.))
-
-import Control.Arrow
+import Prelude hiding (id, (.), (<$>))
 import Control.Applicative
+import Control.Arrow
+import Control.Category
 import Control.Monad.State
 import Data.Maybe
 import Data.List
 import qualified Data.Set as S
-import qualified Data.IntSet as IS
 import qualified Data.Map as M
 import qualified Data.IntMap as IM
 import Data.Set (Set)
-import Data.IntSet (IntSet)
 import Data.Map (Map)
 import Data.IntMap (IntMap)
 import Data.Text (pack)
@@ -80,7 +86,7 @@ performUsageAnalysis startNames = do
       [] -> return []  -- no main -> not compiling -> reachability irrelevant
       main  -> do
         ci  <- idris_interfaces <$> getIState
-        cg  <- idris_callgraph <$> getIState
+--        cg  <- idris_callgraph <$> getIState
         opt <- idris_optimisation <$> getIState
         used <- idris_erasureUsed <$> getIState
         externs <- idris_externs <$> getIState
@@ -136,7 +142,7 @@ performUsageAnalysis startNames = do
     checkAccessibility :: Ctxt OptInfo -> (Name, IntMap (Set Reason)) -> Idris ()
     checkAccessibility opt (n, reachable)
         | Just (Optimise inaccessible dt) <- lookupCtxtExact n opt
-        , eargs@(_:_) <- [fmt n (S.toList rs) | (i,n) <- inaccessible, rs <- maybeToList $ IM.lookup i reachable]
+        , eargs@(_:_) <- [fmt n (S.toList rs) | (i, n) <- inaccessible, rs <- maybeToList $ IM.lookup i reachable]
         = warn $ show n ++ ": inaccessible arguments reachable:\n  " ++ intercalate "\n  " eargs
 
         | otherwise = return ()
@@ -153,7 +159,7 @@ minimalUsage = second gather . forwardChain
     gather = foldr ins (S.empty, M.empty) . M.toList
        where
         ins :: (Node, Set Reason) -> (Set Name, UseMap) -> (Set Name, UseMap)
-        ins ((n, Result), rs) (ns, umap) = (S.insert n ns, umap)
+        ins ((n, Result), _ ) (ns, umap) = (S.insert n ns, umap)
         ins ((n, Arg i ), rs) (ns, umap) = (ns, M.insertWith (IM.unionWith S.union) n (IM.singleton i rs) umap)
 
 forwardChain :: Deps -> (Deps, DepSet)
@@ -290,18 +296,18 @@ buildDepMap ci used externs ctx startNames
     etaExpand (n : ns) t = etaExpand ns (App Complete t (P Ref n Erased))
 
     getDepsSC :: Name -> [Name] -> Vars -> SC -> Deps
-    getDepsSC fn es vs  ImpossibleCase     = M.empty
-    getDepsSC fn es vs (UnmatchedCase msg) = M.empty
+    getDepsSC _  _  _   ImpossibleCase     = M.empty
+    getDepsSC _  _  _  (UnmatchedCase msg) = M.empty
 
     -- for the purposes of erasure, we can disregard the projection
-    getDepsSC fn es vs (ProjCase (Proj t i) alts) = getDepsSC fn es vs (ProjCase t alts)  -- step
+    getDepsSC fn es vs (ProjCase (Proj t _) alts) = getDepsSC fn es vs (ProjCase t alts)  -- step
     getDepsSC fn es vs (ProjCase (P  _ n _) alts) = getDepsSC fn es vs (Case Shared n alts)  -- base
 
     -- other ProjCase's are not supported
-    getDepsSC fn es vs (ProjCase t alts)   = error $ "ProjCase not supported:\n" ++ show (ProjCase t alts)
+    getDepsSC _  _  _  (ProjCase t alts)   = error $ "ProjCase not supported:\n" ++ show (ProjCase t alts)
 
     getDepsSC fn es vs (STerm    t)        = getDepsTerm vs [] (S.singleton (fn, Result)) (etaExpand es t)
-    getDepsSC fn es vs (Case sh n alts)
+    getDepsSC fn es vs (Case _ n alts)
         -- we case-split on this variable, which marks it as used
         -- (unless there is exactly one case branch)
         -- hence we add a new dependency, whose only precondition is
@@ -466,16 +472,16 @@ buildDepMap ci used externs ctx startNames
 
     -- projections
     getDepsTerm vs bs cd (Proj t (-1)) = getDepsTerm vs bs cd t  -- naturals, (S n) -> n
-    getDepsTerm vs bs cd (Proj t i) = error $ "cannot[1] analyse projection !" ++ show i ++ " of " ++ show t
+    getDepsTerm _  _  _  (Proj t i) = error $ "cannot[1] analyse projection !" ++ show i ++ " of " ++ show t
 
     -- the easy cases
-    getDepsTerm vs bs cd (Constant _) = M.empty
-    getDepsTerm vs bs cd (TType    _) = M.empty
-    getDepsTerm vs bs cd (UType    _) = M.empty
-    getDepsTerm vs bs cd  Erased      = M.empty
-    getDepsTerm vs bs cd  Impossible  = M.empty
+    getDepsTerm _  _  _  (Constant _) = M.empty
+    getDepsTerm _  _  _  (TType    _) = M.empty
+    getDepsTerm _  _  _  (UType    _) = M.empty
+    getDepsTerm _  _  _   Erased      = M.empty
+    getDepsTerm _  _  _   Impossible  = M.empty
 
-    getDepsTerm vs bs cd t = error $ "cannot get deps of: " ++ show t
+    getDepsTerm _  _  _  t = error $ "cannot get deps of: " ++ show t
 
     -- Get the number of arguments that might be considered for erasure.
     getArity :: Name -> Int
@@ -504,14 +510,14 @@ buildDepMap ci used externs ctx startNames
 
     -- split "\x_i -> T(x_i)" into [x_i] and T
     unfoldLams :: Term -> ([Name], Term)
-    unfoldLams (Bind n (Lam ty) t) = let (ns,t') = unfoldLams t in (n:ns, t')
+    unfoldLams (Bind n (Lam _) t) = let (ns,t') = unfoldLams t in (n:ns, t')
     unfoldLams t = ([], t)
 
     union :: Deps -> Deps -> Deps
     union = M.unionWith (M.unionWith S.union)
 
-    unions :: [Deps] -> Deps
-    unions = M.unionsWith (M.unionWith S.union)
+--    unions :: [Deps] -> Deps
+--    unions = M.unionsWith (M.unionWith S.union)
 
     unionMap :: (a -> Deps) -> [a] -> Deps
     unionMap f = M.unionsWith (M.unionWith S.union) . map f

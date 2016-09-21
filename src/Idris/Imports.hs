@@ -5,24 +5,27 @@ Copyright   :
 License     : BSD3
 Maintainer  : The Idris Community.
 -}
+
+{-# OPTIONS_GHC -Wall #-}
+{-# LANGUAGE NoImplicitPrelude #-}
+
 module Idris.Imports(
     IFileType(..), findImport, findInPath, findPkgIndex
   , ibcPathNoFallback, installedPackages, pkgIndex
   ) where
 
-import Control.Applicative ((<$>))
-import Data.List (isSuffixOf)
-
-import Idris.AbsSyntax
+import Idris.Prelude
+import Idris.AbsSyntax (runIO, allImportDirs)
+import Idris.AbsSyntaxTree (Idris)
 import Idris.Error
-
 import Idris.Core.TT
-
 import IRTS.System (getIdrisLibDir)
 
+import Control.Applicative ((<$>))
+import Control.Monad.State.Strict
+import Data.List (isSuffixOf)
 import System.FilePath
 import System.Directory
-import Control.Monad.State.Strict
 
 data IFileType = IDR FilePath | LIDR FilePath | IBC FilePath IFileType
     deriving (Show, Eq)
@@ -32,13 +35,13 @@ pkgIndex :: String -> FilePath
 pkgIndex s = "00" ++ s ++ "-idx.ibc"
 
 srcPath :: FilePath -> FilePath
-srcPath fp = let (n, ext) = splitExtension fp in
+srcPath fp = let (_, ext) = splitExtension fp in
                  case ext of
                     ".idr" -> fp
                     _ -> fp ++ ".idr"
 
 lsrcPath :: FilePath -> FilePath
-lsrcPath fp = let (n, ext) = splitExtension fp in
+lsrcPath fp = let (_, ext) = splitExtension fp in
                   case ext of
                      ".lidr" -> fp
                      _ -> fp ++ ".lidr"
@@ -63,7 +66,7 @@ ibcPathNoFallback :: FilePath -> FilePath -> FilePath
 ibcPathNoFallback ibcsd fp = ibcPath ibcsd True fp
 
 findImport :: [FilePath] -> FilePath -> FilePath -> Idris IFileType
-findImport []     ibcsd fp = ierror . Msg $ "Can't find import " ++ fp
+findImport []     _     fp = ierror . Msg $ "Can't find import " ++ fp
 findImport (d:ds) ibcsd fp = do let fp_full = d </> fp
                                 ibcp <- runIO $ ibcPathWithFallback ibcsd fp_full
                                 let idrp = srcPath fp_full

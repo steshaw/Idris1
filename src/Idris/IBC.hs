@@ -5,48 +5,72 @@ Copyright   :
 License     : BSD3
 Maintainer  : The Idris Community.
 -}
-{-# LANGUAGE TypeSynonymInstances #-}
-{-# OPTIONS_GHC -fwarn-incomplete-patterns #-}
+
+{-# OPTIONS_GHC -Wall #-}
+{-# OPTIONS_GHC -fno-warn-orphans #-}
+{-# LANGUAGE NoImplicitPrelude #-}
 
 module Idris.IBC (loadIBC, loadPkgIndex,
                   writeIBC, writePkgIndex,
                   hasValidIBCVersion, IBCPhase(..)) where
 
 import Idris.Core.Evaluate
-import Idris.Core.TT
-import Idris.Core.Binary
+import Idris.Core.TT hiding (str, txt, updateDef)
 import Idris.Core.CaseTree
 import Idris.AbsSyntax
+  ( getIState, putIState, updateIState
+  , getImported, getSymbol
+  , valIBCSubDir
+  , allImportDirs
+  , resetNameIdx
+  , setAccessibility, setFlags, setFnInfo
+  , addImported, addImportDir, addAutoHint, addFunctionErrorHandlers
+  , addDeprecated, addFragile, addConstraints, addSourceDir
+  , addImplementation, addObjectFile, addFlag, addDyLib, addLib, addHdr
+  , addToCG, addTT, addDocStr, addCoercion, addTrans, addErrRev
+  , addInternalApp, addNameHint
+  , updateSyntaxRules
+  , solveDeferred
+  , runIO
+  , logIBC
+  )
+import Idris.AbsSyntaxTree
+  ( PTerm(..), PDecl'(..), PArg, PArg'(..), PunInfo(..)
+  , PData'(..), PClause'(..), PDo'(..), SyntaxInfo(..)
+  , PAltType(..), PTactic'(..)
+  , FnOpt(..), FnInfo(..), Fixity(..)
+  , DSL, DSL'(..) , CGInfo(..), Syntax(..), Using(..)
+  , InterfaceInfo(..), OptInfo(..), RecordInfo(..)
+  , FixDecl(..), ArgOpt(..), Static(..), Plicity(..)
+  , Codegen(..), SizeChange(..)
+  , ProvideWhat'(..)
+  , SynContext(..), SSymbol(..)
+  , IBCWrite(..)
+  , IRFormat(..)
+  , Idris, IState(..)
+  )
 import Idris.Imports
 import Idris.Error
-import Idris.DeepSeq
-import Idris.Delaborate
+import Idris.DeepSeq ()
 import qualified Idris.Docstrings as D
 import Idris.Docstrings (Docstring)
 import Idris.Output
+import Idris.Prelude hiding (lines)
 import IRTS.System (getIdrisLibDir)
-import Paths_idris
 
 import qualified Cheapskate.Types as CT
-
+import Codec.Archive.Zip
+import Control.Applicative ((<$>))
+import Control.DeepSeq (force, NFData)
+import Control.Monad
 import Data.Binary
-import Data.Functor
-import Data.Vector.Binary
-import Data.List as L
+import qualified Data.List as L
 import Data.Maybe (catMaybes)
 import Data.ByteString.Lazy as B hiding (length, elem, map)
-import qualified Data.Text as T
 import qualified Data.Set as S
-
-import Control.Monad
-import Control.DeepSeq
-import Control.Monad.State.Strict hiding (get, put)
-import qualified Control.Monad.State.Strict as ST
 import System.FilePath
 import System.Directory
-import Codec.Archive.Zip
 
-import Debug.Trace
 
 ibcVersion :: Word16
 ibcVersion = 149
@@ -60,7 +84,7 @@ data IBCPhase = IBC_Building  -- ^ when building the module tree
 data IBCFile = IBCFile {
     ver                        :: Word16
   , sourcefile                 :: FilePath
-  , ibc_reachablenames         :: ![Name]
+--  , ibc_reachablenames         :: ![Name]
   , ibc_imports                :: ![(Bool, FilePath)]
   , ibc_importdirs             :: ![FilePath]
   , ibc_sourcedirs             :: ![FilePath]
@@ -116,15 +140,15 @@ deriving instance Binary IBCFile
 !-}
 
 initIBC :: IBCFile
-initIBC = IBCFile ibcVersion "" [] [] [] [] [] [] [] [] [] [] [] [] [] [] [] [] [] [] [] [] [] [] [] [] [] [] [] [] [] [] [] [] [] [] [] [] [] [] Nothing [] [] [] [] [] [] [] [] [] []
+initIBC = IBCFile ibcVersion "" [] [] [] [] [] [] [] [] [] [] [] [] [] [] [] [] [] [] [] [] [] [] [] [] [] [] [] [] [] [] [] [] [] [] [] [] [] Nothing [] [] [] [] [] [] [] [] [] []
 
 hasValidIBCVersion :: FilePath -> Idris Bool
 hasValidIBCVersion fp = do
   archiveFile <- runIO $ B.readFile fp
   case toArchiveOrFail archiveFile of
     Left _ -> return False
-    Right archive -> do ver <- getEntry 0 "ver" archive
-                        return (ver == ibcVersion)
+    Right archive -> do v <- getEntry 0 "ver" archive
+                        return (v == ibcVersion)
 
 
 loadIBC :: Bool -- ^ True = reexport, False = make everything private
@@ -241,7 +265,7 @@ writeIBC src f
 writePkgIndex :: FilePath -> Idris ()
 writePkgIndex f
     = do i <- getIState
-         let imps = map (\ (x, y) -> (True, x)) $ idris_imported i
+         let imps = map (\ (x, _) -> (True, x)) $ idris_imported i
          logIBC 1 $ "Writing package index " ++ show f ++ " including\n" ++
                 show (map snd imps)
          resetNameIdx
@@ -260,7 +284,7 @@ mkIBC (i:is) f = do ist <- getIState
                     mkIBC is f'
 
 ibc :: IState -> IBCWrite -> IBCFile -> Idris IBCFile
-ibc i (IBCFix d) f = return f { ibc_fixes = d : ibc_fixes f }
+ibc _ (IBCFix d) f = return f { ibc_fixes = d : ibc_fixes f }
 ibc i (IBCImp n) f = case lookupCtxtExact n (idris_implicits i) of
                         Just v -> return f { ibc_implicits = (n,v): ibc_implicits f     }
                         _ -> ifail "IBC write failed"
@@ -276,7 +300,7 @@ ibc i (IBCRecord n) f
                    = case lookupCtxtExact n (idris_records i) of
                         Just v -> return f { ibc_records = (n,v): ibc_records f     }
                         _ -> ifail "IBC write failed"
-ibc i (IBCImplementation int res n ins) f
+ibc _ (IBCImplementation int res n ins) f
                    = return f { ibc_implementations = (int, res, n, ins) : ibc_implementations f }
 ibc i (IBCDSL n) f
                    = case lookupCtxtExact n (idris_dsls i) of
@@ -289,16 +313,16 @@ ibc i (IBCData n) f
 ibc i (IBCOpt n) f = case lookupCtxtExact n (idris_optimisation i) of
                         Just v -> return f { ibc_optimise = (n,v): ibc_optimise f     }
                         _ -> ifail "IBC write failed"
-ibc i (IBCSyntax n) f = return f { ibc_syntax = n : ibc_syntax f }
-ibc i (IBCKeyword n) f = return f { ibc_keywords = n : ibc_keywords f }
-ibc i (IBCImport n) f = return f { ibc_imports = n : ibc_imports f }
-ibc i (IBCImportDir n) f = return f { ibc_importdirs = n : ibc_importdirs f }
-ibc i (IBCSourceDir n) f = return f { ibc_sourcedirs = n : ibc_sourcedirs f }
-ibc i (IBCObj tgt n) f = return f { ibc_objs = (tgt, n) : ibc_objs f }
-ibc i (IBCLib tgt n) f = return f { ibc_libs = (tgt, n) : ibc_libs f }
-ibc i (IBCCGFlag tgt n) f = return f { ibc_cgflags = (tgt, n) : ibc_cgflags f }
-ibc i (IBCDyLib n) f = return f {ibc_dynamic_libs = n : ibc_dynamic_libs f }
-ibc i (IBCHeader tgt n) f = return f { ibc_hdrs = (tgt, n) : ibc_hdrs f }
+ibc _ (IBCSyntax n) f = return f { ibc_syntax = n : ibc_syntax f }
+ibc _ (IBCKeyword n) f = return f { ibc_keywords = n : ibc_keywords f }
+ibc _ (IBCImport n) f = return f { ibc_imports = n : ibc_imports f }
+ibc _ (IBCImportDir n) f = return f { ibc_importdirs = n : ibc_importdirs f }
+ibc _ (IBCSourceDir n) f = return f { ibc_sourcedirs = n : ibc_sourcedirs f }
+ibc _ (IBCObj tgt n) f = return f { ibc_objs = (tgt, n) : ibc_objs f }
+ibc _ (IBCLib tgt n) f = return f { ibc_libs = (tgt, n) : ibc_libs f }
+ibc _ (IBCCGFlag tgt n) f = return f { ibc_cgflags = (tgt, n) : ibc_cgflags f }
+ibc _ (IBCDyLib n) f = return f {ibc_dynamic_libs = n : ibc_dynamic_libs f }
+ibc _ (IBCHeader tgt n) f = return f { ibc_hdrs = (tgt, n) : ibc_hdrs f }
 ibc i (IBCDef n) f
    = do f' <- case lookupDefExact n (tt_ctxt i) of
                    Just v -> return f { ibc_defs = (n,v) : ibc_defs f }
@@ -313,39 +337,39 @@ ibc i (IBCDoc n) f = case lookupCtxtExact n (idris_docstrings i) of
 ibc i (IBCCG n) f = case lookupCtxtExact n (idris_callgraph i) of
                         Just v -> return f { ibc_cg = (n,v) : ibc_cg f     }
                         _ -> ifail "IBC write failed"
-ibc i (IBCCoercion n) f = return f { ibc_coercions = n : ibc_coercions f }
-ibc i (IBCAccess n a) f = return f { ibc_access = (n,a) : ibc_access f }
-ibc i (IBCFlags n a) f = return f { ibc_flags = (n,a) : ibc_flags f }
-ibc i (IBCFnInfo n a) f = return f { ibc_fninfo = (n,a) : ibc_fninfo f }
-ibc i (IBCTotal n a) f = return f { ibc_total = (n,a) : ibc_total f }
-ibc i (IBCInjective n a) f = return f { ibc_injective = (n,a) : ibc_injective f }
-ibc i (IBCTrans n t) f = return f { ibc_transforms = (n, t) : ibc_transforms f }
-ibc i (IBCErrRev t) f = return f { ibc_errRev = t : ibc_errRev f }
-ibc i (IBCLineApp fp l t) f
+ibc _ (IBCCoercion n) f = return f { ibc_coercions = n : ibc_coercions f }
+ibc _ (IBCAccess n a) f = return f { ibc_access = (n,a) : ibc_access f }
+ibc _ (IBCFlags n a) f = return f { ibc_flags = (n,a) : ibc_flags f }
+ibc _ (IBCFnInfo n a) f = return f { ibc_fninfo = (n,a) : ibc_fninfo f }
+ibc _ (IBCTotal n a) f = return f { ibc_total = (n,a) : ibc_total f }
+ibc _ (IBCInjective n a) f = return f { ibc_injective = (n,a) : ibc_injective f }
+ibc _ (IBCTrans n t) f = return f { ibc_transforms = (n, t) : ibc_transforms f }
+ibc _ (IBCErrRev t) f = return f { ibc_errRev = t : ibc_errRev f }
+ibc _ (IBCLineApp fp l t) f
      = return f { ibc_lineapps = (fp,l,t) : ibc_lineapps f }
-ibc i (IBCNameHint (n, ty)) f
+ibc _ (IBCNameHint (n, ty)) f
      = return f { ibc_namehints = (n, ty) : ibc_namehints f }
-ibc i (IBCMetaInformation n m) f = return f { ibc_metainformation = (n,m) : ibc_metainformation f }
-ibc i (IBCErrorHandler n) f = return f { ibc_errorhandlers = n : ibc_errorhandlers f }
-ibc i (IBCFunctionErrorHandler fn a n) f =
+ibc _ (IBCMetaInformation n m) f = return f { ibc_metainformation = (n,m) : ibc_metainformation f }
+ibc _ (IBCErrorHandler n) f = return f { ibc_errorhandlers = n : ibc_errorhandlers f }
+ibc _ (IBCFunctionErrorHandler fn a n) f =
   return f { ibc_function_errorhandlers = (fn, a, n) : ibc_function_errorhandlers f }
 ibc i (IBCMetavar n) f =
      case lookup n (idris_metavars i) of
           Nothing -> return f
           Just t -> return f { ibc_metavars = (n, t) : ibc_metavars f }
-ibc i (IBCPostulate n) f = return f { ibc_postulates = n : ibc_postulates f }
-ibc i (IBCExtern n) f = return f { ibc_externs = n : ibc_externs f }
-ibc i (IBCTotCheckErr fc err) f = return f { ibc_totcheckfail = (fc, err) : ibc_totcheckfail f }
-ibc i (IBCParsedRegion fc) f = return f { ibc_parsedSpan = Just fc }
+ibc _ (IBCPostulate n) f = return f { ibc_postulates = n : ibc_postulates f }
+ibc _ (IBCExtern n) f = return f { ibc_externs = n : ibc_externs f }
+ibc _ (IBCTotCheckErr fc err) f = return f { ibc_totcheckfail = (fc, err) : ibc_totcheckfail f }
+ibc _ (IBCParsedRegion fc) f = return f { ibc_parsedSpan = Just fc }
 ibc i (IBCModDocs n) f = case lookupCtxtExact n (idris_moduledocs i) of
                            Just v -> return f { ibc_moduledocs = (n,v) : ibc_moduledocs f }
                            _ -> ifail "IBC write failed"
-ibc i (IBCUsage n) f = return f { ibc_usage = n : ibc_usage f }
-ibc i (IBCExport n) f = return f { ibc_exports = n : ibc_exports f }
-ibc i (IBCAutoHint n h) f = return f { ibc_autohints = (n, h) : ibc_autohints f }
-ibc i (IBCDeprecate n r) f = return f { ibc_deprecated = (n, r) : ibc_deprecated f }
-ibc i (IBCFragile n r)   f = return f { ibc_fragile    = (n,r)  : ibc_fragile f }
-ibc i (IBCConstraint fc u)  f = return f { ibc_constraints = (fc, u) : ibc_constraints f }
+ibc _ (IBCUsage n) f = return f { ibc_usage = n : ibc_usage f }
+ibc _ (IBCExport n) f = return f { ibc_exports = n : ibc_exports f }
+ibc _ (IBCAutoHint n h) f = return f { ibc_autohints = (n, h) : ibc_autohints f }
+ibc _ (IBCDeprecate n r) f = return f { ibc_deprecated = (n, r) : ibc_deprecated f }
+ibc _ (IBCFragile n r)   f = return f { ibc_fragile    = (n,r)  : ibc_fragile f }
+ibc _ (IBCConstraint fc u)  f = return f { ibc_constraints = (fc, u) : ibc_constraints f }
 
 getEntry :: (Binary b, NFData b) => b -> FilePath -> Archive -> Idris b
 getEntry alt f a = case findEntryByPath f a of
@@ -361,10 +385,10 @@ process :: Bool -- ^ Reexporting
            -> IBCPhase
            -> Archive -> FilePath -> Idris ()
 process reexp phase archive fn = do
-                ver <- getEntry 0 "ver" archive
-                when (ver /= ibcVersion) $ do
+                v <- getEntry 0 "ver" archive
+                when (v /= ibcVersion) $ do
                                     logIBC 1 "ibc out of date"
-                                    let e = if ver < ibcVersion
+                                    let e = if v < ibcVersion
                                             then "an earlier" else "a later"
                                     ldir <- runIO $ getIdrisLibDir
                                     let start = if ldir `L.isPrefixOf` fn
@@ -372,7 +396,6 @@ process reexp phase archive fn = do
                                                   else "This module"
                                     let end = case L.stripPrefix ldir fn of
                                                 Nothing -> "Please clean and rebuild."
-
                                                 Just ploc -> unwords ["Please reinstall:", L.head $ splitDirectories ploc]
                                     ifail $ unlines [ unwords ["Incompatible ibc version for:", show fn]
                                                     , unwords [start
@@ -434,14 +457,14 @@ process reexp phase archive fn = do
                 processConstraints archive
 
 timestampOlder :: FilePath -> FilePath -> Idris ()
-timestampOlder src ibc = do
-  srct <- runIO $ getModificationTime src
-  ibct <- runIO $ getModificationTime ibc
+timestampOlder srcF ibcF = do
+  srct <- runIO $ getModificationTime srcF
+  ibct <- runIO $ getModificationTime ibcF
   if (srct > ibct)
     then ifail $ unlines [ "Module needs reloading:"
-                         , unwords ["\tSRC :", show src]
+                         , unwords ["\tSRC :", show srcF]
                          , unwords ["\tModified at:", show srct]
-                         , unwords ["\tIBC :", show ibc]
+                         , unwords ["\tIBC :", show ibcF]
                          , unwords ["\tModified at:", show ibct]
                          ]
     else return ()
@@ -522,7 +545,7 @@ processImports reexp phase ar = do
             IDR fn -> do
                 logIBC 1 $ "Failed at " ++ fn
                 ifail "Must be an ibc"
-            IBC fn src -> loadIBC (reexp && re) phase' fn) fs
+            IBC fn _ -> loadIBC (reexp && re) phase' fn) fs
 
 processImplicits :: Archive -> Idris ()
 processImplicits ar = do
@@ -530,14 +553,14 @@ processImplicits ar = do
     mapM_ (\ (n, imp) -> do
         i <- getIState
         case lookupDefAccExact n False (tt_ctxt i) of
-            Just (n, Hidden) -> return ()
-            Just (n, Private) -> return ()
+            Just (_, Hidden) -> return ()
+            Just (_, Private) -> return ()
             _ -> putIState (i { idris_implicits = addDef n imp (idris_implicits i) })) imps
 
 processInfix :: Archive -> Idris ()
 processInfix ar = do
     f <- getEntry [] "ibc_fixes" ar
-    updateIState (\i -> i { idris_infixes = sort $ f ++ idris_infixes i })
+    updateIState (\i -> i { idris_infixes = L.sort $ f ++ idris_infixes i })
 
 processStatics :: Archive -> Idris ()
 processStatics ar = do
@@ -659,7 +682,7 @@ processDefs ar = do
             r' <- update r
             return $ Right (l', r')
 
-        updateCD (CaseDefs (ts, t) (cs, c) (is, i) (rs, r)) = do
+        updateCD (CaseDefs (_, _) (cs, c) (_, _) (rs, r)) = do
             c' <- updateSC c
             r' <- updateSC r
             return $ CaseDefs (cs, c') (cs, c') (cs, c') (rs, r')
@@ -711,9 +734,9 @@ processDefs ar = do
             return $ Bind n b' sc'
                 where
                     updateB (Let t v) = liftM2 Let (update' t) (update' v)
-                    updateB b = do
-                        ty' <- update' (binderTy b)
-                        return (b { binderTy = ty' })
+                    updateB b' = do
+                        ty' <- update' (binderTy b')
+                        return (b' { binderTy = ty' })
         update' (Proj t i) = do
                   t' <- update' t
                   return $ Proj t' i
@@ -942,7 +965,7 @@ instance Binary SizeChange where
                    _ -> error "Corrupted binary data for SizeChange"
 
 instance Binary CGInfo where
-        put (CGInfo x1 x2 x3)
+        put (CGInfo x1 _ x3)
           = do put x1
 --                put x3 -- Already used SCG info for totality check
                put x3
@@ -1038,7 +1061,7 @@ instance Binary CaseAlt where
                    _ -> error "Corrupted binary data for CaseAlt"
 
 instance Binary CaseDefs where
-        put (CaseDefs x1 x2 x3 x4)
+        put (CaseDefs _ x2 _ x4)
           = do -- don't need totality checked or inlined versions
                put x2
                put x4
@@ -1048,9 +1071,9 @@ instance Binary CaseDefs where
                return (CaseDefs x2 x2 x2 x4)
 
 instance Binary CaseInfo where
-        put x@(CaseInfo x1 x2 x3) = do put x1
-                                       put x2
-                                       put x3
+        put (CaseInfo x1 x2 x3) = do put x1
+                                     put x2
+                                     put x3
         get = do x1 <- get
                  x2 <- get
                  x3 <- get
@@ -1067,7 +1090,7 @@ instance Binary Def where
                                    put x1
                                    put x2
                 -- all primitives just get added at the start, don't write
-                Operator x1 x2 x3 -> do return ()
+                Operator _ _ _ -> do return ()
                 -- no need to add/load original patterns, because they're not
                 -- used again after totality checking
                 CaseOp x1 x2 x3 _ _ x4 -> do putWord8 3
@@ -1110,15 +1133,15 @@ instance Binary Accessibility where
                    3 -> return Hidden
                    _ -> error "Corrupted binary data for Accessibility"
 
-safeToEnum :: (Enum a, Bounded a, Integral int) => String -> int -> a
-safeToEnum label x' = result
-  where
-    x = fromIntegral x'
-    result
-        |  x < fromEnum (minBound `asTypeOf` result)
-        || x > fromEnum (maxBound `asTypeOf` result)
-            = error $ label ++ ": corrupted binary representation in IBC"
-        | otherwise = toEnum x
+-- safeToEnum :: (Enum a, Bounded a, Integral int) => String -> int -> a
+-- safeToEnum label x' = result
+--   where
+--     x = fromIntegral x'
+--     result
+--         |  x < fromEnum (minBound `asTypeOf` result)
+--         || x > fromEnum (maxBound `asTypeOf` result)
+--             = error $ label ++ ": corrupted binary representation in IBC"
+--         | otherwise = toEnum x
 
 instance Binary PReason where
         put x
@@ -1208,8 +1231,8 @@ instance Binary FnOpt where
                 TotalFn -> putWord8 1
                 Dictionary -> putWord8 2
                 AssertTotal -> putWord8 3
-                Specialise x -> do putWord8 4
-                                   put x
+                Specialise x1 -> do putWord8 4
+                                    put x1
                 Coinductive -> putWord8 5
                 PartialFn -> putWord8 6
                 Implicit -> putWord8 7
@@ -1464,7 +1487,7 @@ instance (Binary t) => Binary (PDecl' t) where
                 PSyntax x1 x2 -> do putWord8 13
                                     put x1
                                     put x2
-                PDirective x1 -> error "Cannot serialize PDirective"
+                PDirective _ -> error "Cannot serialize PDirective"
                 PProvider x1 x2 x3 x4 x5 x6 ->
                   do putWord8 15
                      put x1
@@ -1793,7 +1816,7 @@ instance Binary PTerm where
                 PTyped x1 x2 -> do putWord8 7
                                    put x1
                                    put x2
-                PAppImpl x1 x2 -> error "PAppImpl in final term"
+                PAppImpl _ _ -> error "PAppImpl in final term"
                 PApp x1 x2 x3 -> do putWord8 8
                                     put x1
                                     put x2

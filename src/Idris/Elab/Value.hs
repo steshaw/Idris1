@@ -5,60 +5,47 @@ Copyright   :
 License     : BSD3
 Maintainer  : The Idris Community.
 -}
+
+{-# OPTIONS_GHC -Wall #-}
 {-# LANGUAGE PatternGuards #-}
-{-# OPTIONS_GHC -fwarn-incomplete-patterns #-}
+
 module Idris.Elab.Value(
     elabVal, elabValBind, elabDocTerms
   , elabExec, elabREPL
   ) where
 
 import Idris.AbsSyntax
-import Idris.ASTUtils
-import Idris.DSL
+  ( getIState, updateIState, getContext, setContext
+  , addImpl, addDeferred
+  , logElab
+  )
+import Idris.AbsSyntaxTree
+  ( PTerm(..), PAltType(..), FnOpt(..)
+  , pexp, pimp, infTerm, infP
+  , showTmImpls
+  , Idris, IState(..)
+  , ElabInfo(..)
+  , initEState
+  , getInferTerm
+  )
+
 import Idris.Error
-import Idris.Delaborate
-import Idris.Imports
-import Idris.Coverage
-import Idris.DataOpts
-import Idris.Providers
-import Idris.Primitives
-import Idris.Inliner
-import Idris.PartialEval
-import Idris.DeepSeq
-import Idris.Output (iputStrLn, pshow, iWarn, sendHighlighting)
-import IRTS.Lang
+import Idris.Output (sendHighlighting)
 
 import Idris.Elab.Utils
 import Idris.Elab.Term
 
-import Idris.Core.TT
-import Idris.Core.Elaborate hiding (Tactic(..))
+import Idris.Core.TT hiding (str)
+import Idris.Core.Elaborate hiding (Tactic(..), defer)
 import Idris.Core.Evaluate hiding (Unchecked)
-import Idris.Core.Execute
-import Idris.Core.Typecheck
-import Idris.Core.CaseTree
 
 import Idris.Docstrings
 
 import Prelude hiding (id, (.))
 import Control.Category
-
-import Control.Applicative hiding (Const)
-import Control.DeepSeq
-import Control.Monad
-import Control.Monad.State.Strict as State
-import Data.List
-import Data.Maybe
+import Data.Char(toLower)
 import qualified Data.Traversable as Traversable
-import Debug.Trace
 
-import qualified Data.Map as Map
-import qualified Data.Set as S
-import qualified Data.Text as T
-import Data.Char(isLetter, toLower)
-import Data.List.Split (splitOn)
-
-import Util.Pretty(pretty, text)
 
 -- | Elaborate a value, returning any new bindings created (this will only
 -- happen if elaborating as a pattern clause)
@@ -81,30 +68,27 @@ elabValBind info aspat norm tm_in
         setContext ctxt'
         processTacticDecls info newDecls
         sendHighlighting highlights
-        updateIState $ \i -> i { idris_name = newGName }
+        updateIState $ \i' -> i' { idris_name = newGName }
 
         let vtm = orderPats (getInferTerm tm')
 
         def' <- checkDef info (fileFC "(input)") iderr True defer
-        let def'' = map (\(n, (i, top, t, ns)) -> (n, (i, top, t, ns, True, True))) def'
+        let def'' = map (\(n, (i', top, t, ns)) -> (n, (i', top, t, ns, True, True))) def'
         addDeferred def''
         mapM_ (elabCaseBlock info []) is
 
         logElab 3 ("Value: " ++ show vtm)
         (vtm_in, vty) <- recheckC (constraintNS info) (fileFC "(input)") id [] vtm
 
-        let vtm = if norm then normalise (tt_ctxt i) [] vtm_in
-                          else vtm_in
-        let bargs = getPBtys vtm
-
-        return (vtm, vty, bargs)
+        let vtm' = if norm then normalise (tt_ctxt i) [] vtm_in
+                           else vtm_in
+        let bargs = getPBtys vtm'
+        return (vtm', vty, bargs)
 
 elabVal :: ElabInfo -> ElabMode -> PTerm -> Idris (Term, Type)
 elabVal info aspat tm_in
    = do (tm, ty, _) <- elabValBind info aspat False tm_in
         return (tm, ty)
-
-
 
 elabDocTerms :: ElabInfo -> Docstring (Either Err PTerm) -> Idris (Docstring DocTerm)
 elabDocTerms info str = do typechecked <- Traversable.mapM decorate str
@@ -113,15 +97,15 @@ elabDocTerms info str = do typechecked <- Traversable.mapM decorate str
         decorate (Right pt) = fmap (fmap fst) (tryElabVal info ERHS pt)
 
         tryElabVal :: ElabInfo -> ElabMode -> PTerm -> Idris (Either Err (Term, Type))
-        tryElabVal info aspat tm_in
-           = idrisCatch (fmap Right $ elabVal info aspat tm_in)
+        tryElabVal info' aspat tm_in
+           = idrisCatch (fmap Right $ elabVal info' aspat tm_in)
                         (return . Left)
 
         mkDocTerm :: String -> [String] -> String -> Either Err Term -> DocTerm
-        mkDocTerm lang attrs src (Left err)
+        mkDocTerm lang _     _ (Left err)
           | map toLower lang == "idris" = Failing err
           | otherwise                   = Unchecked
-        mkDocTerm lang attrs src (Right tm)
+        mkDocTerm lang attrs _ (Right tm)
           | map toLower lang == "idris" = if "example" `elem` map (map toLower) attrs
                                             then Example tm
                                             else Checked tm

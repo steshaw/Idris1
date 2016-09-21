@@ -6,6 +6,7 @@ License     : BSD3
 Maintainer  : The Idris Community.
 -}
 
+{-# LANGUAGE NoImplicitPrelude #-}
 {-# LANGUAGE DeriveFunctor #-}
 {-# LANGUAGE PatternGuards #-}
 
@@ -14,6 +15,7 @@ module Idris.AbsSyntax(
   , module Idris.AbsSyntaxTree
   ) where
 
+import Idris.Prelude
 import Idris.Core.TT
 import Idris.Core.Evaluate
 import Idris.AbsSyntaxTree
@@ -26,7 +28,6 @@ import Util.DynamicLinker
 import System.IO
 import System.Directory (canonicalizePath, doesFileExist)
 
-import Prelude hiding ((<$>), Applicative, Traversable, Foldable)
 import Control.Applicative
 import Control.Monad.State
 

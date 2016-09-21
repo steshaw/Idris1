@@ -6,32 +6,31 @@ License     : BSD3
 Maintainer  : The Idris Community.
 -}
 
-{-# LANGUAGE DeriveFunctor, DeriveGeneric, ScopedTypeVariables #-}
 {-# OPTIONS_GHC -fwarn-incomplete-patterns #-}
+{-# LANGUAGE NoImplicitPrelude #-}
+{-# LANGUAGE DeriveFunctor #-}
+{-# LANGUAGE DeriveGeneric #-}
+{-# LANGUAGE ScopedTypeVariables #-}
+
 module Idris.Docstrings (
     Docstring(..), Block(..), Inline(..), parseDocstring, renderDocstring
   , emptyDocstring, nullDocstring, noDocs, overview, containsText
   , renderHtml, annotCode, DocTerm(..), renderDocTerm, checkDocstring
   ) where
 
+import Idris.Prelude
+import Idris.Core.TT (OutputAnnotation(..), TextFormatting(..), Name, Term, Err)
+import Util.Pretty
+
 import qualified Cheapskate as C
 import qualified Cheapskate.Types as CT
 import Cheapskate.Html (renderDoc)
-
-import Util.Pretty
-
-import Idris.Core.TT (OutputAnnotation(..), TextFormatting(..), Name, Term, Err)
-
-import Prelude hiding ((<$>))
-
 import qualified Data.Text as T
 import qualified Data.Foldable as F
 import Data.Foldable (Foldable)
 import Data.Traversable (Traversable)
 import qualified Data.Sequence as S
-
 import GHC.Generics (Generic)
-
 import Text.Blaze.Html (Html)
 
 -- | The various kinds of code samples that can be embedded in docs

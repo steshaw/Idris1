@@ -5,12 +5,16 @@ Copyright   :
 License     : BSD3
 Maintainer  : The Idris Community.
 -}
+
+{-# OPTIONS_GHC -Wall #-}
+{-# LANGUAGE NoImplicitPrelude #-}
 {-# LANGUAGE PatternGuards #-}
 
 module Idris.Inliner(inlineDef, inlineTerm) where
 
+import Idris.Prelude
 import Idris.Core.TT
-import Idris.AbsSyntax
+import Idris.AbsSyntaxTree (IState)
 
 inlineDef :: IState -> [([Name], Term, Term)] -> [([Name], Term, Term)]
 inlineDef ist ds = map (\ (ns, lhs, rhs) -> (ns, lhs, inlineTerm ist rhs)) ds
@@ -25,12 +29,12 @@ inlineDef ist ds = map (\ (ns, lhs, rhs) -> (ns, lhs, inlineTerm ist rhs)) ds
 --        + If not, reduce the arguments (argument level) and try again
 --      - If not, inline all the arguments (top level)
 inlineTerm :: IState -> Term -> Term
-inlineTerm ist tm = inl tm where
+inlineTerm _ term = inl term where
   inl orig@(P _ n _) = inlApp n [] orig
-  inl orig@(App _ f a)
+  inl orig@(App _ _ _)
       | (P _ fn _, args) <- unApply orig = inlApp fn args orig
   inl (Bind n (Let t v) sc) = Bind n (Let t (inl v)) (inl sc)
   inl (Bind n b sc) = Bind n b (inl sc)
   inl tm = tm
 
-  inlApp fn args orig = orig
+  inlApp _ _ orig = orig

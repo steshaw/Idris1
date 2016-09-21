@@ -5,6 +5,10 @@ Copyright   : 2016 The Idris Community
 License     : BSD3
 Maintainer  : The Idris Community.
 -}
+
+{-# OPTIONS_GHC -Wall #-}
+{-# LANGUAGE NoImplicitPrelude #-}
+
 module Idris.Info
   ( getIdrisLibDir
   , getIdrisFlagsLib
@@ -20,18 +24,16 @@ module Idris.Info
   , getIdrisLoggingCategories
   ) where
 
+import Idris.Prelude
+import Idris.Imports (installedPackages)
+import Idris.AbsSyntax (loggingCatsStr)
+import qualified IRTS.System as S
+import Version_idris (gitHash)
+
 import System.FilePath
 import System.Directory
 import Data.Version
 
-import Idris.Imports (installedPackages)
-import Idris.AbsSyntax (loggingCatsStr)
-
-import qualified IRTS.System as S
-
-import Version_idris (gitHash)
-
-import Paths_idris
 
 getIdrisLibDir :: IO String
 getIdrisLibDir = S.getIdrisLibDir
@@ -48,12 +50,13 @@ getIdrisFlagsEnv = S.getEnvFlags
 getIdrisCC :: IO String
 getIdrisCC = S.getCC
 
+getIdrisVersion :: String
 getIdrisVersion = showVersion S.version ++ suffix
   where
     suffix = if gitHash =="" then "" else "-" ++ gitHash
 
+getIdrisVersionNoGit :: Version
 getIdrisVersionNoGit = S.version
-
 
 -- | Get the platform-specific, user-specific Idris dir
 getIdrisUserDataDir :: IO FilePath

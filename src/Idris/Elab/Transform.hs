@@ -5,87 +5,74 @@ Copyright   :
 License     : BSD3
 Maintainer  : The Idris Community.
 -}
+
 {-# LANGUAGE PatternGuards #-}
+
 module Idris.Elab.Transform where
 
 import Idris.AbsSyntax
-import Idris.ASTUtils
-import Idris.DSL
+  ( getIState, updateIState, getContext, setContext
+  , addImplPat, addImplBound, addTrans, addIBC
+  , logElab
+  )
+import Idris.AbsSyntaxTree
+  ( PTerm(..)
+  , allNamesIn, infP, infTerm
+  , ElabInfo(..)
+  , Idris, IState(..)
+  , showTmImpls
+  , initEState
+  , getInferTerm
+  , IBCWrite(IBCTrans)
+  )
 import Idris.Error
-import Idris.Delaborate
-import Idris.Imports
-import Idris.Coverage
-import Idris.DataOpts
-import Idris.Providers
-import Idris.Primitives
-import Idris.Inliner
-import Idris.PartialEval
-import Idris.DeepSeq
-import Idris.Output (iputStrLn, pshow, iWarn, sendHighlighting)
-import IRTS.Lang
+import Idris.Output (sendHighlighting)
 
 import Idris.Elab.Utils
 import Idris.Elab.Term
 
 import Idris.Core.TT
-import Idris.Core.Elaborate hiding (Tactic(..))
-import Idris.Core.Evaluate
-import Idris.Core.Execute
+import Idris.Core.Elaborate hiding (Tactic(..), defer)
 import Idris.Core.Typecheck
-import Idris.Core.CaseTree
-
-import Idris.Docstrings
 
 import Prelude hiding (id, (.))
 import Control.Category
-
-import Control.Applicative hiding (Const)
-import Control.DeepSeq
 import Control.Monad
 import Control.Monad.State.Strict as State
-import Data.List
-import Data.Maybe
-import Debug.Trace
 
-import qualified Data.Map as Map
-import qualified Data.Set as S
-import qualified Data.Text as T
-import Data.Char(isLetter, toLower)
-import Data.List.Split (splitOn)
-
-import Util.Pretty(pretty, text)
 
 elabTransform :: ElabInfo -> FC -> Bool -> PTerm -> PTerm -> Idris (Term, Term)
 elabTransform info fc safe lhs_in@(PApp _ (PRef _ _ tf) _) rhs_in
     = do ctxt <- getContext
-         i <- getIState
-         let lhs = addImplPat i lhs_in
+         ist <- getIState
+         let lhs = addImplPat ist lhs_in
          logElab 5 ("Transform LHS input: " ++ showTmImpls lhs)
-         (ElabResult lhs' dlhs [] ctxt' newDecls highlights newGName, _) <-
-              tclift $ elaborate (constraintNS info) ctxt (idris_datatypes i) (idris_name i) (sMN 0 "transLHS") infP initEState
-                       (erun fc (buildTC i info ETransLHS [] (sUN "transform")
+         (ElabResult lhs' _ [] ctxt' newDecls highlights newGName, _) <-
+              tclift $ elaborate (constraintNS info) ctxt (idris_datatypes ist) (idris_name ist) (sMN 0 "transLHS") infP initEState
+                       (erun fc (buildTC ist info ETransLHS [] (sUN "transform")
                                    (allNamesIn lhs_in) (infTerm lhs)))
          setContext ctxt'
          processTacticDecls info newDecls
          sendHighlighting highlights
          updateIState $ \i -> i { idris_name = newGName }
          let lhs_tm = orderPats (getInferTerm lhs')
-         let lhs_ty = getInferType lhs'
-         let newargs = pvars i lhs_tm
+-- XXX: Unused.
+--         let lhs_ty = getInferType lhs'
+         let newargs = pvars ist lhs_tm
 
          (clhs_tm_in, clhs_ty) <- recheckC_borrowing False False [] (constraintNS info) fc id [] lhs_tm
          let clhs_tm = renamepats pnames clhs_tm_in
          logElab 3 ("Transform LHS " ++ show clhs_tm)
          logElab 3 ("Transform type " ++ show clhs_ty)
 
-         let rhs = addImplBound i (map fst newargs) rhs_in
+         let rhs = addImplBound ist (map fst newargs) rhs_in
          logElab 5 ("Transform RHS input: " ++ showTmImpls rhs)
 
-         ((rhs', defer, ctxt', newDecls, newGName), _) <-
-              tclift $ elaborate (constraintNS info) ctxt (idris_datatypes i) (idris_name i) (sMN 0 "transRHS") clhs_ty initEState
-                       (do pbinds i lhs_tm
+         ((rhs', _, ctxt', newDecls, newGName), _) <-
+              tclift $ elaborate (constraintNS info) ctxt (idris_datatypes ist) (idris_name ist) (sMN 0 "transRHS") clhs_ty initEState
+                       (do pbinds ist lhs_tm
                            setNextName
-                           (ElabResult _ _ _ ctxt' newDecls highlights newGName) <- erun fc (build i info ERHS [] (sUN "transform") rhs)
+                           (ElabResult _ _ _ ctxt' newDecls highlights newGName) <- erun fc (build ist info ERHS [] (sUN "transform") rhs)
                            set_global_nextname newGName
                            erun fc $ psolve lhs_tm
                            tt <- get_term
@@ -121,7 +108,7 @@ elabTransform info fc safe lhs_in@(PApp _ (PRef _ _ tf) _) rhs_in
     depat (Bind n (PVar t) sc) = depat (instantiate (P Bound n t) sc)
     depat x = x
 
-    renamepats (n' : ns) (Bind n (PVar t) sc)
+    renamepats (n' : ns) (Bind _ (PVar t) sc)
        = Bind n' (PVar t) (renamepats ns sc) -- all Vs
     renamepats _ sc = sc
 
@@ -129,5 +116,5 @@ elabTransform info fc safe lhs_in@(PApp _ (PRef _ _ tf) _) rhs_in
     -- with any other names when applying rules, so rename here.
     pnames = map (\i -> sMN i ("tvar" ++ show i)) [0..]
 
-elabTransform info fc safe lhs_in rhs_in
+elabTransform _ fc _ _ _
    = ierror (At fc (Msg "Invalid transformation rule (must be function application)"))

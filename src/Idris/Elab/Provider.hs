@@ -6,8 +6,8 @@ License     : BSD3
 Maintainer  : The Idris Community.
 -}
 
+{-# OPTIONS_GHC -Wall #-}
 {-# LANGUAGE PatternGuards #-}
-{-# OPTIONS_GHC -Wall -fwarn-tabs #-}
 
 module Idris.Elab.Provider(elabProvider) where
 
