@@ -5,9 +5,10 @@ Copyright   :
 License     : BSD3
 Maintainer  : The Idris Community.
 -}
+
 module Idris.Elab.Quasiquote (extractUnquotes) where
 
-import Idris.Core.Elaborate hiding (Tactic(..))
+import Idris.Core.Elaborate hiding (Tactic(..), goal)
 import Idris.Core.TT
 import Idris.AbsSyntax
 
@@ -44,7 +45,7 @@ extractTUnquotes n (GoalType s tac)
 extractTUnquotes n (TCheck t) = extract1 n TCheck t
 extractTUnquotes n (TEval t) = extract1 n TEval t
 extractTUnquotes n (Claim name t) = extract1 n (Claim name) t
-extractTUnquotes n tac = return (tac, []) -- the rest don't contain PTerms, or have been desugared away
+extractTUnquotes _ tac = return (tac, []) -- the rest don't contain PTerms, or have been desugared away
 
 extractPArgUnquotes :: Int -> PArg -> Elab' aux (PArg, [(Name, PTerm)])
 extractPArgUnquotes d (PImp p m opts n t) =
@@ -68,13 +69,13 @@ extractDoUnquotes d (DoExp fc tm)
 extractDoUnquotes d (DoBind fc n nfc tm)
   = do (tm', ex) <- extractUnquotes d tm
        return (DoBind fc n nfc tm', ex)
-extractDoUnquotes d (DoBindP fc t t' alts)
+extractDoUnquotes _ (DoBindP _ _ _ _)
   = fail "Pattern-matching binds cannot be quasiquoted"
 extractDoUnquotes d (DoLet  fc n nfc v b)
   = do (v', ex1) <- extractUnquotes d v
        (b', ex2) <- extractUnquotes d b
        return (DoLet fc n nfc v' b', ex1 ++ ex2)
-extractDoUnquotes d (DoLetP fc t t') = fail "Pattern-matching lets cannot be quasiquoted"
+extractDoUnquotes _ (DoLetP _ _ _) = fail "Pattern-matching lets cannot be quasiquoted"
 
 
 extractUnquotes :: Int -> PTerm -> Elab' aux (PTerm, [(Name, PTerm)])
@@ -155,7 +156,7 @@ extractUnquotes n (PProof tacs)
 extractUnquotes n (PTactics tacs)
   = do (tacs', exs) <- fmap unzip $ mapM (extractTUnquotes n) tacs
        return (PTactics tacs', concat exs)
-extractUnquotes n (PElabError err) = fail "Can't quasiquote an error"
+extractUnquotes _ (PElabError _) = fail "Can't quasiquote an error"
 extractUnquotes n (PCoerced tm)
   = do (tm', ex) <- extractUnquotes n tm
        return (PCoerced tm', ex)
@@ -169,12 +170,12 @@ extractUnquotes n (PNoImplicits tm)
 extractUnquotes n (PQuasiquote tm goal)
   = fmap (\(tm', ex) -> (PQuasiquote tm' goal, ex)) $ extractUnquotes (n+1) tm
 extractUnquotes n (PUnquote tm)
-  | n == 0 = do n <- getNameFrom (sMN 0 "unquotation")
-                return (PRef (fileFC "(unquote)") [] n, [(n, tm)])
+  | n == 0 = do nm <- getNameFrom (sMN 0 "unquotation")
+                return (PRef (fileFC "(unquote)") [] nm, [(nm, tm)])
   | otherwise = fmap (\(tm', ex) -> (PUnquote tm', ex)) $
                 extractUnquotes (n-1) tm
 extractUnquotes n (PRunElab fc tm ns)
   = fmap (\(tm', ex) -> (PRunElab fc tm' ns, ex)) $ extractUnquotes n tm
-extractUnquotes n (PConstSugar fc tm)
+extractUnquotes n (PConstSugar _ tm)
   = extractUnquotes n tm
-extractUnquotes n x = return (x, []) -- no subterms!
+extractUnquotes _ x = return (x, []) -- no subterms!
