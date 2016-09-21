@@ -7,10 +7,20 @@ Maintainer  : The Idris Community.
 -}
 
 {-# LANGUAGE PatternGuards #-}
+{-# OPTIONS_GHC -Wall -fwarn-tabs #-}
 
 module Idris.Elab.Provider(elabProvider) where
 
 import Idris.AbsSyntax
+  ( getIState, getContext
+  , logElab
+  )
+import Idris.AbsSyntaxTree
+  ( PTerm(..), PClause'(..) , SyntaxInfo(..)
+  , Idris, IState(..)
+  , ElabInfo(..)
+  , ProvideWhat, ProvideWhat'(..) , LanguageExt(..)
+  )
 import Idris.Error
 import Idris.Delaborate
 import Idris.Providers
@@ -46,7 +56,7 @@ elabProvider doc info syn fc nfc what n
          -- First elaborate the expected type (and check that it's a type)
          -- The goal type for a postulate is always Type.
          (ty', typ) <- case what of
-                         ProvTerm ty p   -> elabVal info ERHS ty
+                         ProvTerm ty _   -> elabVal info ERHS ty
                          ProvPostulate _ -> elabVal info ERHS (PType fc)
          unless (isTType typ) $
            ifail ("Expected a type, got " ++ show ty' ++ " : " ++ show typ)
@@ -74,7 +84,7 @@ elabProvider doc info syn fc nfc what n
            Provide tm
              | ProvTerm ty _ <- what ->
                do -- Finally add a top-level definition of the provided term
-                  elabType info syn doc [] fc [] n NoFC ty
+                  _ <- elabType info syn doc [] fc [] n NoFC ty
                   elabClauses info fc [] n [PClause fc n (PApp fc (PRef fc [] n) []) [] (delab i tm) []]
                   logElab 3 $ "Elaborated provider " ++ show n ++ " as: " ++ show tm
              | ProvPostulate _ <- what ->
