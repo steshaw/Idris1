@@ -19,7 +19,8 @@ import Idris.AbsSyntax
   , logElab
   )
 import Idris.AbsSyntaxTree
-  ( PTerm(..), PDecl'(..), PArg, PArg'(..), PData, PData'(..), PClause, FnOpt(..)
+  ( PTerm(..), PDecl'(..), PArg, PArg'(..), PData, PData'(..)
+  , PClause, PClause'(..), FnOpt(..)
   , SyntaxInfo(..), defaultSyntax
   , Plicity(..), expl
   , boundNamesIn, pexp
