@@ -7,7 +7,6 @@ Maintainer  : The Idris Community.
 -}
 
 {-# LANGUAGE PatternGuards #-}
-{-# OPTIONS_GHC -Wall -fwarn-tabs #-}
 
 module Idris.Elab.Clause where
 
@@ -69,11 +68,9 @@ import Idris.Core.CaseTree
 import Idris.Core.Typecheck
 
 import Idris.Docstrings hiding (Unchecked)
-import Util.Pretty hiding ((<$>))
 
-import Prelude hiding (id, (.))
+import Prelude hiding (id, (.), (<$>))
 import Control.Category
-
 import Control.Applicative hiding (Const)
 import Control.DeepSeq
 import Control.Monad
@@ -85,13 +82,6 @@ import Data.Word
 
 import Debug.Trace
 
-import qualified Data.Map as Map
-import qualified Data.Set as S
-import qualified Data.Text as T
-import Data.Char(isLetter, toLower)
-import Data.List.Split (splitOn)
-
-import Util.Pretty(pretty, text)
 import Numeric
 
 -- | Elaborate a collection of left-hand and right-hand pairs - that is, a
