@@ -28,7 +28,7 @@ import Idris.AbsSyntaxTree
   )
 import Idris.IdrisDoc
 import Idris.IBC
-import Idris.Output
+import Idris.Output (iputStrLn)
 import Idris.Imports
 import Idris.Error (ifail)
 import Idris.Main (idrisMain, idris)
