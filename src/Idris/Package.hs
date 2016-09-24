@@ -39,9 +39,9 @@ import Data.List.Split(splitOn)
 import Data.Either(partitionEithers)
 
 import System.Process
-import System.Directory
+import System.Directory (getCurrentDirectory, setCurrentDirectory, doesFileExist)
 import System.Exit
-import System.IO
+import System.IO (hPutStrLn, hClose)
 import System.FilePath ((</>), addTrailingPathSeparator, takeFileName,
                         takeDirectory, addExtension, hasExtension)
 import System.Directory (createDirectoryIfMissing, copyFile)
