@@ -14,7 +14,18 @@ Maintainer  : The Idris Community.
 module Idris.Parser.Expr where
 
 import Idris.Prelude hiding (pi)
-import Idris.AbsSyntax hiding (using, getAll)
+import Idris.AbsSyntaxTree
+  ( PTerm(..), PArg, ArgOpt(..), PDo, PDo'(..)
+  , PTactic, PTactic'(..), Plicity(..), Static(..)
+  , PAltType(..)
+  , pexp, pimp, pconst, constraint, mapPTermFC
+  , PunInfo(..)
+  , SyntaxRules(..) , Syntax(..) , SSymbol(..) , syntaxSymbols
+  , SynContext(..)
+  , SyntaxInfo(..)
+  , Opt(NoOldTacticDeprecationWarnings)
+  , IState(idris_infixes, syntax_rules)
+  )
 import Idris.Parser.Helpers
 import Idris.Parser.Ops
 import Idris.DSL
@@ -989,13 +1000,13 @@ rewriteTerm syn = do kw <- reservedFC "rewrite"
                      fc <- getFC
                      prf <- expr syn
                      giving <- optional (do symbol "==>"; expr' syn)
-                     using <- optional (do reserved "using"
-                                           (n, _) <- name
-                                           return n)
+                     usingName <- optional (do reserved "using"
+                                               (n, _) <- name
+                                               return n)
                      kw' <- reservedFC "in";  sc <- expr syn
                      highlightP kw AnnKeyword
                      highlightP kw' AnnKeyword
-                     return (PRewrite fc using prf sc giving)
+                     return (PRewrite fc usingName prf sc giving)
                   <?> "term rewrite expression"
 
 {- |Parses a let binding
