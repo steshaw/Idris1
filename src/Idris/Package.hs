@@ -16,6 +16,16 @@ import Idris.Core.TT
 import Idris.Parser (loadModule)
 import Idris.Output (pshow)
 import Idris.AbsSyntax
+  ( opt
+  , getIBCSubDir
+  , getIState, putIState, runIO
+  , addImportDir
+  )
+import Idris.AbsSyntaxTree
+  ( Opt(..)
+  , Idris, IState(errSpan)
+  , idrisInit
+  )
 import Idris.IdrisDoc
 import Idris.IBC
 import Idris.Output
