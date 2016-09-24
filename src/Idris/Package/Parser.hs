@@ -117,9 +117,6 @@ filename = (do
                     checkThat (path == takeFileName path)
                         "filename must contain no directory component"
 
-skipChar :: Char -> PParser ()
-skipChar c = lchar c >> return ()
-
 pClause :: PParser ()
 pClause = do reserved "executable"; skipChar '='
              exec <- filename

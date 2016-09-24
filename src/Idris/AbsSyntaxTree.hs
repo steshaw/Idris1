@@ -1032,8 +1032,8 @@ updateN ns n | Just n' <- lookup n ns = n'
 updateN _  n = n
 
 updateNs :: [(Name, Name)] -> PTerm -> PTerm
-updateNs [] t = t
-updateNs ns t = mapPT updateRef t
+updateNs [] tm = tm
+updateNs ns tm = mapPT updateRef tm
   where updateRef (PRef fc fcs f) = PRef fc fcs (updateN ns f)
         updateRef t = t
 

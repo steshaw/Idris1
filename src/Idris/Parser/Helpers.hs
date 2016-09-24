@@ -308,6 +308,10 @@ string = Chr.string
 lchar :: MonadicParsing m => Char -> m Char
 lchar = token . char
 
+-- | Parses a character as a token, skipping value.
+skipChar :: MonadicParsing m => Char -> m ()
+skipChar c = lchar c >> pure ()
+
 -- | Parses a character as a token, returning the source span of the character
 lcharFC :: MonadicParsing m => Char -> m FC
 lcharFC ch = do (FC file (l, c) _) <- getFC
@@ -315,8 +319,8 @@ lcharFC ch = do (FC file (l, c) _) <- getFC
                 return $ FC file (l, c) (l, c+1)
 
 -- | Parses string as a token
-symbol :: MonadicParsing m => String -> m String
-symbol = Tok.symbol
+symbol :: MonadicParsing m => String -> m ()
+symbol s = Tok.symbol s >> return ()
 
 symbolFC :: MonadicParsing m => String -> m FC
 symbolFC str = do (FC file (l, c) _) <- getFC
