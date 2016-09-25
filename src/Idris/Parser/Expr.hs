@@ -7,6 +7,7 @@ Maintainer  : The Idris Community.
 -}
 
 {-# OPTIONS_GHC -Wall #-}
+{-# LANGUAGE ConstraintKinds #-}
 {-# LANGUAGE NoImplicitPrelude #-}
 {-# LANGUAGE PatternGuards #-}
 {-# LANGUAGE TupleSections #-}
