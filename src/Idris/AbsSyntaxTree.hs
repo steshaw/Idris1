@@ -12,6 +12,7 @@ Maintainer  : The Idris Community.
 {-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE PatternGuards #-}
 
+
 module Idris.AbsSyntaxTree where
 
 import Idris.Core.TT

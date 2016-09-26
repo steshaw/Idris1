@@ -6,6 +6,7 @@ License     : BSD3
 Maintainer  : The Idris Community.
 -}
 
+{-# OPTIONS_GHC -Wall #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE NoImplicitPrelude #-}
 {-# LANGUAGE ConstraintKinds #-}
@@ -40,6 +41,7 @@ import Control.Monad.State.Strict (StateT(..), lift, get, put, evalStateT)
 import Data.Maybe
 import Data.Monoid (Monoid)
 import Data.List
+import Data.List.Split (splitOn)
 import Data.Char
 import qualified Data.Map as M
 import qualified Data.HashSet as HS
@@ -412,23 +414,18 @@ initsEndAt p (x:xs) | p x = [] : x_inits_xs
                     | otherwise = x_inits_xs
   where x_inits_xs = [x : cs | cs <- initsEndAt p xs]
 
-
 {- | Create a `Name' from a pair of strings representing a base name and its
  namespace.
 -}
 mkName :: (String, String) -> Name
 mkName (n, "") = sUN n
-mkName (n, ns) = sNS (sUN n) (reverse (parseNS ns))
-  where parseNS nm = case span (/= '.') nm of
-                      (x, "")    -> [x]
-                      (x, '.':y) -> x : parseNS y
+mkName (n, ns) = sNS (sUN n) (reverse (splitOn "." ns))
 
 opChars :: String
 opChars = ":!#$%&*+./<=>?@\\^|-~"
 
 operatorLetter :: MonadicParsing m => m Char
 operatorLetter = oneOf opChars
-
 
 commentMarkers :: [String]
 commentMarkers = [ "--", "|||" ]
@@ -465,7 +462,6 @@ lineNum _ = 0
 columnNum :: Delta -> Int
 columnNum pos = fromIntegral (column pos) + 1
 
-
 {- | Get file position as FC -}
 getFC :: MonadicParsing m => m FC
 getFC = do s <- position
@@ -474,7 +470,6 @@ getFC = do s <- position
            return $ FC f (lineNum s, columnNum s) (lineNum s, columnNum s) -- TODO: Change to actual spanning
            -- Issue #1594 on the Issue Tracker.
            -- https://github.com/idris-lang/Idris-dev/issues/1594
-
 
 {-* Syntax helpers-}
 -- | Bind constraints to term
@@ -702,7 +697,6 @@ accData Frozen nm ns = do addAcc nm Public -- so that it can be used in public d
 accData a n ns = do addAcc n a
                     mapM_ (`addAcc` a) ns
 
-
 {- * Error reporting helpers -}
 {- | Error message with possible fixes list -}
 fixErrorMsg :: String -> [String] -> String
@@ -710,23 +704,24 @@ fixErrorMsg msg fixes = msg ++ ", possible fixes:\n" ++ (concat $ intersperse "\
 
 -- | Collect 'PClauses' with the same function name
 collect :: [PDecl] -> [PDecl]
-collect (c@(PClauses _ o _ _) : decls) = clauses (cname c) [] (c : decls)
+collect decls@(PClauses fc o _ cs : _) = clauses (cname cs) [] decls
   where clauses :: Maybe Name -> [PClause] -> [PDecl] -> [PDecl]
         clauses j@(Just n) acc (PClauses _ _ _ [PClause fc' n' l ws r w] : ds)
            | n == n' = clauses j (PClause fc' n' l ws r (collect w) : acc) ds
         clauses j@(Just n) acc (PClauses _ _ _ [PWith fc' n' l ws r pn w] : ds)
            | n == n' = clauses j (PWith fc' n' l ws r pn (collect w) : acc) ds
-        clauses (Just n) acc xs = PClauses (fcOf c) o n (reverse acc) : collect xs
-        clauses Nothing _   (_:xs) = collect xs
-        clauses Nothing _   [] = []
+        clauses (Just n)   acc xs       = PClauses fc o n (reverse acc) : collect xs
+        clauses Nothing    _   (_ : xs) = collect xs
+        clauses Nothing    _   []       = []
 
-        cname :: PDecl -> Maybe Name
-        cname (PClauses _ _ _ [PClause _ n _ _ _ _]) = Just n
-        cname (PClauses _ _ _ [PWith   _ n _ _ _ _ _]) = Just n
-        cname (PClauses _ _ _ [PClauseR _ _ _ _]) = Nothing
-        cname (PClauses _ _ _ [PWithR _ _ _ _ _]) = Nothing
-        fcOf :: PDecl -> FC
-        fcOf (PClauses fc _ _ _) = fc
+        cname :: [PClause] -> Maybe Name
+        cname [PClause _ n _ _ _ _]   = Just n
+        cname [PWith   _ n _ _ _ _ _] = Just n
+        cname [PClauseR _ _ _ _]      = Nothing
+        cname [PWithR _ _ _ _ _]      = Nothing
+        cname []                      = error "Unexpected empty clauses in collect.cname"
+        cname (_ : _)                 = error "Unexpected non-singleton clauses in collect.cname"
+
 collect (PParams f ns ps : ds) = PParams f ns (collect ps) : collect ds
 collect (POpenInterfaces f ns ps : ds) = POpenInterfaces f ns (collect ps) : collect ds
 collect (PMutual f ms : ds) = PMutual f (collect ms) : collect ds

@@ -1,7 +1,11 @@
-module TestData where
+{-# OPTIONS_GHC -Wall #-}
+
+module TestData
+  ( testFamiliesForCodegen, TestFamily(..)
+  , Codegen(..)
+  ) where
 
 import Data.IntMap as IMap
-import Data.Map.Strict as Map
 import Data.Set as Set
 
 data Codegen = C | JS deriving (Show, Eq, Ord)
@@ -10,15 +14,15 @@ data CompatCodegen = ANY | C_CG | NODE_CG | NONE
 
 -- A TestFamily groups tests that share the same theme
 data TestFamily = TestFamily {
-  -- A shorter lowcase name to use in filenames
-  id :: String,
+  -- A shorter lowercase name to use in filenames
+  tf_name :: String,
   -- A proper name for the test family that will be displayed
-  name :: String,
+  tf_description :: String,
   -- A map of test metadata:
   --   - The key is the index (>=1 && <1000)
   --   - The value is the set of compatible code generators,
   --   or Nothing if the test doesn't depend on a code generator
-  tests :: IntMap (Maybe (Set Codegen))
+  tf_tests :: IntMap (Maybe (Set Codegen))
 } deriving (Show)
 
 toCodegenSet :: CompatCodegen -> Maybe (Set Codegen)
@@ -31,13 +35,13 @@ toCodegenSet compatCodegen = fmap Set.fromList mList where
 
 testFamilies :: [TestFamily]
 testFamilies = fmap instantiate testFamiliesData where
-  instantiate (id, name, testsData) = TestFamily id name tests where
-    tests = IMap.fromList (fmap makeSetCodegen testsData)
+  instantiate (ident, nm, testsData) = TestFamily ident nm tests' where
+    tests' = IMap.fromList (fmap makeSetCodegen testsData)
     makeSetCodegen (index, codegens) = (index, toCodegenSet codegens)
 
 testFamiliesForCodegen :: Codegen -> [TestFamily]
 testFamiliesForCodegen codegen =
-  fmap (\testFamily -> testFamily {tests = IMap.filter f (tests testFamily)})
+  fmap (\testFamily -> testFamily {tf_tests = IMap.filter f (tf_tests testFamily)})
        testFamilies
     where
       f mCodegens = case mCodegens of

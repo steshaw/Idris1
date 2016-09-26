@@ -293,7 +293,6 @@ Library
                 , fsnotify >= 0.2 && < 2.2
                 , async < 2.2
 
-
   -- zlib >= 0.6.1 is broken with GHC < 7.10.3
   -- Travis is broken for 7.6 and 7.8 with a newer process
   if impl(ghc < 7.10.3)
@@ -375,7 +374,6 @@ Test-suite regression-and-feature-tests
                , transformers
   if impl(ghc < 7.10)
     Extensions: DeriveDataTypeable
-
 
   ghc-prof-options: -auto-all -caf-all
   ghc-options:      -fwarn-tabs

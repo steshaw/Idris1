@@ -1,27 +1,23 @@
+{-# OPTIONS_GHC -Wall #-}
+
 module Main where
+
+import TestData
 
 import Control.Monad
 import Data.Char (isLetter)
 import Data.Typeable
-import Data.Proxy
-import Data.List
 import qualified Data.IntMap as IMap
 
-import System.Directory
-import System.Environment
-import System.Exit
 import System.Process
-import System.Info
 import System.IO
 import System.FilePath ((</>))
-import Options.Applicative
+import Options.Applicative (switch, long, help, (<>))
 import Test.Tasty
 import Test.Tasty.Golden
 import Test.Tasty.Runners
 import Test.Tasty.Options
 import Test.Tasty.Ingredients.Rerun
-
-import TestData
 
 --------------------------------------------------------------------- [ Config ]
 
@@ -41,8 +37,12 @@ testDirectory = "test"
 
 newtype NodeOpt = NodeOpt Bool deriving (Eq, Ord, Typeable)
 
+nodeArg :: String
 nodeArg = "node"
+
+nodeHelp :: String
 nodeHelp = "Performs the tests with the node code generator"
+
 instance IsOption NodeOpt where
   defaultValue = NodeOpt False
   parseValue = fmap NodeOpt . safeRead
@@ -60,10 +60,10 @@ ingredients = defaultIngredients ++
 -- Compare a given file contents against the golden file contents
 -- A ripoff of goldenVsFile from Tasty.Golden
 test :: String -> String -> IO () -> TestTree
-test testName path = goldenVsFileDiff testName diff ref output
+test testName path = goldenVsFileDiff testName diff refFilePath outputFilePath
   where
-    ref = path </> "expected"
-    output = path </> "output"
+    refFilePath = path </> "expected"
+    outputFilePath = path </> "output"
     diff ref new = ["diff", "--strip-trailing-cr", "-u", new, ref]
 
 -- Should always output a 3-charater string from a postive Int
@@ -77,10 +77,10 @@ mkGoldenTests testFamilies flags =
   testGroup "Regression and feature tests"
             (fmap mkTestFamily testFamilies)
     where
-      mkTestFamily (TestFamily id name tests) =
-        testGroup name (fmap (mkTest id) (IMap.keys tests))
-      mkTest id index =
-        let testname = id ++ indexToString index
+      mkTestFamily (TestFamily name description tests) =
+        testGroup description (fmap (mkTest name) (IMap.keys tests))
+      mkTest name index =
+        let testname = name ++ indexToString index
             path = testDirectory </> testname
          in
           test testname path (runTest path flags)

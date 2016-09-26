@@ -5,41 +5,29 @@ Copyright   :
 License     : BSD3
 Maintainer  : The Idris Community.
 -}
-{-# LANGUAGE GeneralizedNewtypeDeriving, ConstraintKinds, PatternGuards #-}
-{-# OPTIONS_GHC -O0 #-}
+
+{-# LANGUAGE ConstraintKinds #-}
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE NoImplicitPrelude #-}
+{-# LANGUAGE PatternGuards #-}
+
 module Idris.Parser(module Idris.Parser,
                     module Idris.Parser.Expr,
                     module Idris.Parser.Data,
                     module Idris.Parser.Helpers,
                     module Idris.Parser.Ops) where
 
-import Prelude hiding (pi)
-
-import qualified System.Directory as Dir (makeAbsolute)
-
-import Text.Trifecta.Delta
-import Text.Trifecta hiding (span, stringLiteral, charLiteral, natural, symbol, char, string, whiteSpace, Err)
-import Text.Parser.LookAhead
-import Text.Parser.Expression
-import qualified Text.Parser.Token as Tok
-import qualified Text.Parser.Char as Chr
-import qualified Text.Parser.Token.Highlight as Hi
-
-import Text.PrettyPrint.ANSI.Leijen (Doc, plain)
-import qualified Text.PrettyPrint.ANSI.Leijen as ANSI
-
+import Idris.Prelude hiding (pi)
 import Idris.AbsSyntax hiding (namespace, params)
 import Idris.DSL
 import Idris.Imports
 import Idris.Delaborate
 import Idris.Error
 import Idris.Elab.Value
-import Idris.Elab.Term
 import Idris.ElabDecls
 import Idris.Coverage
 import Idris.IBC
 import Idris.Unlit
-import Idris.Providers
 import Idris.Output
 
 import Idris.Parser.Helpers
@@ -49,10 +37,7 @@ import Idris.Parser.Data
 
 import Idris.Docstrings hiding (Unchecked)
 
-import Paths_idris
-
-import Util.DynamicLinker
-import Util.System (readSource, writeSource)
+import Util.System (readSource)
 import qualified Util.Pretty as P
 
 import Idris.Core.TT
@@ -61,26 +46,23 @@ import Idris.Core.Evaluate
 import Control.Applicative hiding (Const)
 import Control.Monad
 import Control.Monad.State.Strict
-
 import Data.Function
 import Data.Maybe
 import qualified Data.List.Split as Spl
 import Data.List
-import Data.Monoid
 import Data.Char
 import Data.Ord
 import Data.Foldable (asum)
 import Data.Generics.Uniplate.Data (descendM)
 import qualified Data.Map as M
-import qualified Data.HashSet as HS
 import qualified Data.Text as T
 import qualified Data.ByteString.UTF8 as UTF8
-import qualified Data.Set as S
-
-import Debug.Trace
-
 import System.FilePath
-import System.IO
+import qualified System.Directory as Dir (makeAbsolute)
+import Text.Trifecta.Delta
+import Text.Trifecta hiding (span, stringLiteral, charLiteral, natural, symbol, char, string, whiteSpace, Err)
+import Text.PrettyPrint.ANSI.Leijen (Doc, plain)
+import qualified Text.PrettyPrint.ANSI.Leijen as ANSI
 
 {-
 @
@@ -616,7 +598,7 @@ fnDecl' syn = checkDeclFixity $
                  return (PTy doc argDocs syn fc opts' n nfc ty)
             <|> postulate syn
             <|> caf syn
-            <|> pattern syn
+            <|> patternP syn
             <?> "function declaration"
 
 {-| Parses a series of function and accessbility options
@@ -1053,11 +1035,11 @@ usingDecl syn = try (do x <- fst <$> fnName
 Pattern ::= Clause;
 @
 -}
-pattern :: SyntaxInfo -> IdrisParser PDecl
-pattern syn = do fc <- getFC
-                 clause <- clause syn
-                 return (PClauses fc [] (sMN 2 "_") [clause]) -- collect together later
-              <?> "pattern"
+patternP :: SyntaxInfo -> IdrisParser PDecl
+patternP syn = do fc <- getFC
+                  c <- clause syn
+                  return (PClauses fc [] (sMN 2 "_") [c]) -- collect together later
+               <?> "pattern"
 
 {-| Parse a constant applicative form declaration
 
@@ -1629,9 +1611,9 @@ parseProg syn fname input mrk
                                     IdeMode n h -> iWarn fc (P.text msg)
                                   putIState (i { errSpan = Just fc })
                                   return []
-            Success (x, i)  -> do putIState i
-                                  reportParserWarnings
-                                  return $ collect x
+            Success (decls, i)  -> do putIState i
+                                      reportParserWarnings
+                                      return $ collect decls
   where mainProg :: IdrisParser ([PDecl], IState)
         mainProg = case mrk of
                         Nothing -> do i <- get; return ([], i)
