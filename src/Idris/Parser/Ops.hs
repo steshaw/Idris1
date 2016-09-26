@@ -5,38 +5,28 @@ Copyright   :
 License     : BSD3
 Maintainer  : The Idris Community.
 -}
-{-# LANGUAGE GeneralizedNewtypeDeriving, ConstraintKinds, PatternGuards #-}
+
+{-# OPTIONS_GHC -Wall #-}
+{-# LANGUAGE ConstraintKinds #-}
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE NoImplicitPrelude #-}
+{-# LANGUAGE PatternGuards #-}
+
 module Idris.Parser.Ops where
 
-import Prelude hiding (pi)
-
-import Text.Trifecta.Delta
-import Text.Trifecta hiding (span, stringLiteral, charLiteral, natural, symbol, char, string, whiteSpace)
-import Text.Parser.LookAhead
-import Text.Parser.Expression
-import qualified Text.Parser.Token as Tok
-import qualified Text.Parser.Char as Chr
-import qualified Text.Parser.Token.Highlight as Hi
+import Idris.Prelude hiding (pi)
 
 import Idris.AbsSyntax
 import Idris.Parser.Helpers
-
 import Idris.Core.TT
 
 import Control.Applicative
 import Control.Monad
 import Control.Monad.State.Strict
-
-import Data.Maybe
-import qualified Data.List.Split as Spl
 import Data.List
-import Data.Monoid
-import Data.Char
-import qualified Data.HashSet as HS
-import qualified Data.Text as T
-import qualified Data.ByteString.UTF8 as UTF8
+import Text.Trifecta hiding (span, stringLiteral, charLiteral, natural, symbol, char, string, whiteSpace)
+import Text.Parser.Expression
 
-import Debug.Trace
 
 -- | Creates table for fixity declarations to build expression parser
 -- using pre-build and user-defined operator/fixity declarations
@@ -53,7 +43,6 @@ table fixes
     flatten (PApp fc (PApp _ f as) bs) = flatten (PApp fc f (as ++ bs))
     flatten t = t
 
-
 -- | Calculates table for fixity declarations
 toTable :: [FixDecl] -> OperatorTable IdrisParser PTerm
 toTable fs = map (map toBin)
@@ -62,29 +51,30 @@ toTable fs = map (map toBin)
                                        (\fc x -> PApp fc (PRef fc [] (sUN op)) [pexp x])
          toBin (Fix f op)
             = binary op (\fc x y -> PApp fc (PRef fc [] (sUN op)) [pexp x,pexp y]) (assoc f)
-         assoc (Infixl _) = AssocLeft
+         assoc (Infixl _)  = AssocLeft
          assoc (Infixr _) = AssocRight
-         assoc (InfixN _) = AssocNone
+         assoc (InfixN _)  = AssocNone
+         assoc (PrefixN _) = error "Impossible case PrefixN for toTable.assoc"
 
 -- | Binary operator
 binary :: String -> (FC -> PTerm -> PTerm -> PTerm) -> Assoc -> Operator IdrisParser PTerm
-binary name f = Infix (do indentPropHolds gtProp
-                          fc <- reservedOpFC name
-                          indentPropHolds gtProp
-                          return (f fc))
+binary nm f = Infix $ do indentPropHolds gtProp
+                         fc <- reservedOpFC nm
+                         indentPropHolds gtProp
+                         return (f fc)
 
 -- | Prefix operator
 prefix :: String -> (FC -> PTerm -> PTerm) -> Operator IdrisParser PTerm
-prefix name f = Prefix (do reservedOp name
-                           fc <- getFC
-                           indentPropHolds gtProp
-                           return (f fc))
+prefix nm f = Prefix $ do reservedOp nm
+                          fc <- getFC
+                          indentPropHolds gtProp
+                          return (f fc)
 
 -- | Backtick operator
 backtick :: Operator IdrisParser PTerm
 backtick = Infix (do indentPropHolds gtProp
-                     lchar '`'; (n, fc) <- fnName
-                     lchar '`'
+                     _ <- lchar '`'; (n, fc) <- fnName
+                     _ <- lchar '`'
                      indentPropHolds gtProp
                      return (\x y -> PApp fc (PRef fc [fc] n) [pexp x, pexp y])) AssocNone
 
@@ -93,7 +83,6 @@ nofixityoperator :: Operator IdrisParser PTerm
 nofixityoperator = Infix (do indentPropHolds gtProp
                              op <- try operator
                              unexpected $ "Operator without known fixity: " ++ op) AssocNone
-
 
 {- | Parses an operator in function position i.e. enclosed by `()', with an
  optional namespace
@@ -104,16 +93,15 @@ nofixityoperator = Infix (do indentPropHolds gtProp
     | (Identifier_t '.')? '(' Operator_t ')'
     ;
 @
-
 -}
 operatorFront :: IdrisParser (Name, FC)
 operatorFront = try (do (FC f (l, c) _) <- getFC
-                        op <- lchar '(' *> reservedOp "="  <* lchar ')'
+                        _ <- lchar '(' *> reservedOp "="  <* lchar ')'
                         return (eqTy, FC f (l, c) (l, c+3)))
             <|> maybeWithNS (do (FC f (l, c) _) <- getFC
                                 op <- lchar '(' *> operator
                                 (FC _ _ (l', c')) <- getFC
-                                lchar ')'
+                                skipChar ')'
                                 return (op, (FC f (l, c) (l', c' + 1)))) False []
 
 {- | Parses a function (either normal name or operator)
@@ -134,13 +122,13 @@ Fixity ::=
 -}
 fixity :: IdrisParser PDecl
 fixity = do pushIndent
-            f <- fixityType; i <- fst <$> natural;
+            fixityF <- fixityType; i <- fst <$> natural;
             ops <- sepBy1 operator (lchar ',')
             terminator
-            let prec = fromInteger i
+            let precedence = fromInteger i
             istate <- get
             let infixes = idris_infixes istate
-            let fs      = map (Fix (f prec)) ops
+            let fs      = map (Fix (fixityF precedence)) ops
             let redecls = map (alreadyDeclared infixes) fs
             let ill     = filter (not . checkValidity) redecls
             if null ill
@@ -148,9 +136,9 @@ fixity = do pushIndent
                                      , ibc_write     = map IBCFix fs ++ ibc_write istate
                                    })
                        fc <- getFC
-                       return (PFix fc (f prec) ops)
-               else fail $ concatMap (\(f, (x:xs)) -> "Illegal redeclaration of fixity:\n\t\""
-                                                ++ show f ++ "\" overrides \"" ++ show x ++ "\"") ill
+                       return (PFix fc (fixityF precedence) ops)
+               else fail $ concatMap (\(f, (x:_)) -> "Illegal redeclaration of fixity:\n\t\"" ++
+                                                     show f ++ "\" overrides \"" ++ show x ++ "\"") ill
          <?> "fixity declaration"
              where alreadyDeclared :: [FixDecl] -> FixDecl -> (FixDecl, [FixDecl])
                    alreadyDeclared fs f = (f, filter ((extractName f ==) . extractName) fs)
