@@ -36,7 +36,7 @@ import Idris.Output (iWarn)
 
 import Control.Applicative
 import Control.Monad
-import Control.Monad.State.Strict (StateT(..), lift, get, put, evalStateT)
+import Control.Monad.State.Strict
 
 import Data.Maybe
 import Data.Monoid (Monoid)
