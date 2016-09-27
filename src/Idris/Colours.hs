@@ -1,4 +1,3 @@
-{-# LANGUAGE DeriveGeneric #-}
 {-|
 Module      : Idris.Colours
 Description : Support for colours within Idris.
@@ -6,6 +5,10 @@ Copyright   :
 License     : BSD3
 Maintainer  : The Idris Community.
 -}
+
+{-# OPTIONS_GHC -Wall #-}
+{-# LANGUAGE DeriveGeneric #-}
+
 module Idris.Colours (
     IdrisColour(..)
   , ColourTheme(..)
@@ -55,8 +58,8 @@ defaultTheme = ColourTheme { keywordColour = IdrisColour Nothing True False True
 
 -- | Compute the ANSI colours corresponding to an Idris colour
 mkSGR :: IdrisColour -> [SGR]
-mkSGR (IdrisColour c v u b i) =
-    fg c ++
+mkSGR (IdrisColour col v u b i) =
+    fg col ++
     [SetUnderlining SingleUnderline | u] ++
     [SetConsoleIntensity BoldIntensity | b] ++
     [SetItalicized True | i]
@@ -79,8 +82,8 @@ hEndColourise h _ = hSetSGR h [Reset]
 -- | Set the colour of a string using POSIX escape codes, with trailing '\STX' denoting the end
 -- (required by Haskeline in the prompt string)
 colouriseWithSTX :: IdrisColour -> String -> String
-colouriseWithSTX (IdrisColour c v u b i) str = setSGRCode sgr ++ "\STX" ++ str ++ setSGRCode [Reset] ++ "\STX"
-    where sgr = fg c ++
+colouriseWithSTX (IdrisColour col v u b i) str = setSGRCode sgr ++ "\STX" ++ str ++ setSGRCode [Reset] ++ "\STX"
+    where sgr = fg col ++
                 [SetUnderlining SingleUnderline | u] ++
                 [SetConsoleIntensity BoldIntensity | b] ++
                 [SetItalicized True | i]

@@ -4,6 +4,10 @@ Description : Parser for the REPL commands.
 License     : BSD3
 Maintainer  : The Idris Community.
 -}
+
+{-# OPTIONS_GHC -Wall #-}
+{-# LANGUAGE NoImplicitPrelude #-}
+
 module Idris.REPL.Parser (
     parseCmd
   , help
@@ -11,35 +15,45 @@ module Idris.REPL.Parser (
   , setOptions
   ) where
 
-import System.FilePath ((</>))
-import System.Console.ANSI (Color(..))
-
+import Idris.Prelude
 import Idris.Colours
-import Idris.AbsSyntax
-import Idris.Core.TT
+import Idris.AbsSyntaxTree
+  ( PTerm(..)
+  , ConsoleWidth(..), OutputFmt(..)
+  , Opt(..)
+  , Codegen(..), IRFormat(..)
+  , LogCat(..), strLogCat, parserCats, elabCats, codegenCats
+  , HowMuchDocs(..)
+  , defaultSyntax
+  , implicitAllowed
+  , IState
+  )
+import Idris.Core.TT (Name, sUN, sNS, fileFC)
 import Idris.Help
 import qualified Idris.Parser as P
 
 import Idris.REPL.Commands
 
 import Control.Applicative
-import Control.Monad.State.Strict
-
+import Data.List
+import Data.List.Split(splitOn)
+import Data.Char(isSpace, toLower)
+import System.FilePath ((</>))
+import System.Console.ANSI (Color(..))
 import Text.Parser.Combinators
 import Text.Parser.Char(anyChar,oneOf)
 import Text.Trifecta (Result)
 
-import Data.List
-import Data.List.Split(splitOn)
-import Data.Char(isSpace, toLower)
 
 parseCmd :: IState -> String -> String -> Result (Either String Command)
 parseCmd i inputname = P.runparser pCmd i inputname . trim
     where trim = f . f
               where f = reverse . dropWhile isSpace
 
-type CommandTable = [ ( [String], CmdArg, String
-                    , String -> P.IdrisParser (Either String Command) ) ]
+type CommandInfo = ( [String], CmdArg, String
+                   , String -> P.IdrisParser (Either String Command)
+                   )
+type CommandTable = [CommandInfo]
 
 setOptions :: [(String, Opt)]
 setOptions = [("errorcontext", ErrContext),
@@ -171,43 +185,49 @@ parserCommands =
     )
   ]
 
-noArgCmd names command doc =
-  (names, NoArg, doc, noArgs command)
-nameArgCmd names command doc =
-  (names, NameArg, doc, fnNameArg command)
-namespaceArgCmd names command doc =
-  (names, NamespaceArg, doc, namespaceArg command)
-exprArgCmd names command doc =
-  (names, ExprArg, doc, exprArg command)
-metavarArgCmd names command doc =
-  (names, MetaVarArg, doc, fnNameArg command)
-optArgCmd names command doc =
-  (names, OptionArg, doc, optArg command)
-proofArgCmd names command doc =
-  (names, NoArg, doc, proofArg command)
+noArgCmd :: [String] -> Command -> String -> CommandInfo
+noArgCmd names command doc = (names, NoArg, doc, noArgs command)
+
+nameArgCmd :: [String] -> (Name -> Command) -> String -> CommandInfo
+nameArgCmd names command doc = (names, NameArg, doc, fnNameArg command)
+
+namespaceArgCmd :: [String] -> ([String] -> Command) -> String -> CommandInfo
+namespaceArgCmd names command doc = (names, NamespaceArg, doc, namespaceArg command)
+
+exprArgCmd :: [String] -> (PTerm -> Command) -> String -> CommandInfo
+exprArgCmd names command doc = (names, ExprArg, doc, exprArg command)
+
+-- metavarArgCmd :: [String] -> (Name -> Command) -> String -> CommandInfo
+-- metavarArgCmd names command doc = (names, MetaVarArg, doc, fnNameArg command)
+
+optArgCmd :: [String] -> (Opt -> Command) -> String -> CommandInfo
+optArgCmd names command doc = (names, OptionArg, doc, optArg command)
+
+proofArgCmd :: [String] -> (Bool -> Int -> Name -> Command) -> String -> CommandInfo
+proofArgCmd names command doc = (names, NoArg, doc, proofArg command)
 
 pCmd :: P.IdrisParser (Either String Command)
-pCmd = choice [ do c <- cmd names; parser c
+pCmd = choice [ do c <- command names; parser c
               | (names, _, _, parser) <- parserCommandsForHelp ++ parserCommands ]
      <|> unrecognized
      <|> nop
      <|> eval
     where nop = do eof; return (Right NOP)
           unrecognized = do
-              P.lchar ':'
-              cmd <- many anyChar
-              let cmd' = takeWhile (/=' ') cmd
+              P.skipChar ':'
+              chars <- many anyChar
+              let cmd' = takeWhile (/=' ') chars
               return (Left $ "Unrecognized command: " ++ cmd')
 
-cmd :: [String] -> P.IdrisParser String
-cmd xs = try $ do
-    P.lchar ':'
-    docmd sorted_xs
+          command :: [String] -> P.IdrisParser String
+          command names = try $ do
+              P.skipChar ':'
+              doCmd sortedNames
 
-    where docmd [] = fail "Could not parse command"
-          docmd (x:xs) = try (P.reserved x >> return x) <|> docmd xs
+              where doCmd []     = fail "Could not parse command"
+                    doCmd (n:ns) = try (P.reserved n >> return n) <|> doCmd ns
 
-          sorted_xs = sortBy (\x y -> compare (length y) (length x)) xs
+                    sortedNames = sortBy (\x y -> compare (length y) (length x)) names
 
 
 noArgs :: Command -> String -> P.IdrisParser (Either String Command)
@@ -226,7 +246,7 @@ eval = do
   return $ Right (Eval t)
 
 exprArg :: (PTerm -> Command) -> String -> P.IdrisParser (Either String Command)
-exprArg cmd name = do
+exprArg cmdF name = do
     let noArg = do
         eof
         return $ Left ("Usage is :" ++ name ++ " <expression>")
@@ -234,23 +254,23 @@ exprArg cmd name = do
     let justOperator = do
         (op, fc) <- P.operatorFC
         eof
-        return $ Right $ cmd (PRef fc [] (sUN op))
+        return $ Right $ cmdF (PRef fc [] (sUN op))
 
     let properArg = do
         t <- P.fullExpr defaultSyntax
-        return $ Right (cmd t)
+        return $ Right (cmdF t)
     try noArg <|> try justOperator <|> properArg
 
 genArg :: String -> P.IdrisParser a -> (a -> Command)
            -> String -> P.IdrisParser (Either String Command)
-genArg argName argParser cmd name = do
+genArg argName argParser commandF name = do
     let emptyArgs = do eof; failure
         oneArg = do arg <- argParser
                     eof
-                    return (Right (cmd arg))
+                    return (Right (commandF arg))
     try emptyArgs <|> oneArg <|> failure
     where
-    failure = return $ Left ("Usage is :" ++ name ++ " <" ++ argName ++ ">")
+      failure = return $ Left ("Usage is :" ++ name ++ " <" ++ argName ++ ">")
 
 nameArg, fnNameArg :: (Name -> Command) -> String -> P.IdrisParser (Either String Command)
 nameArg = genArg "name" $ fst <$> P.name
@@ -287,12 +307,12 @@ optArg cmd name = do
 
     where
         pOption :: P.IdrisParser Opt
-        pOption = foldl (<|>) empty $ map (\(a, b) -> do discard (P.symbol a); return b) setOptions
+        pOption = foldl (<|>) empty $ map (\(a, b) -> do P.symbol a; return b) setOptions
 
 proofArg :: (Bool -> Int -> Name -> Command) -> String -> P.IdrisParser (Either String Command)
-proofArg cmd name = do
+proofArg cmd _ = do
     upd <- option False $ do
-        P.lchar '!'
+        P.skipChar '!'
         return True
     l <- fst <$> P.natural
     n <- fst <$> P.name;
@@ -315,14 +335,14 @@ cmd_doc name = do
     try constant <|> pType <|> fnName
 
 cmd_consolewidth :: String -> P.IdrisParser (Either String Command)
-cmd_consolewidth name = do
+cmd_consolewidth _ = do
     w <- pConsoleWidth
     return (Right (SetConsoleWidth w))
 
     where
         pConsoleWidth :: P.IdrisParser ConsoleWidth
-        pConsoleWidth = do discard (P.symbol "auto"); return AutomaticWidth
-                    <|> do discard (P.symbol "infinite"); return InfinitelyWide
+        pConsoleWidth = do P.symbol "auto"; return AutomaticWidth
+                    <|> do P.symbol "infinite"; return InfinitelyWide
                     <|> do n <- fmap (fromInteger . fst) P.natural
                            return (ColsWide n)
 
@@ -331,34 +351,33 @@ cmd_printdepth _ = do d <- optional (fmap (fromInteger . fst) P.natural)
                       return (Right $ SetPrinterDepth d)
 
 cmd_execute :: String -> P.IdrisParser (Either String Command)
-cmd_execute name = do
+cmd_execute _ = do
     tm <- option maintm (P.fullExpr defaultSyntax)
     return (Right (Execute tm))
   where
     maintm = PRef (fileFC "(repl)") [] (sNS (sUN "main") ["Main"])
 
 cmd_dynamic :: String -> P.IdrisParser (Either String Command)
-cmd_dynamic name = do
-    let optArg = do l <- many anyChar
-                    if (l /= "")
-                        then return $ Right (DynamicLink l)
-                        else return $ Right ListDynamic
-    let failure = return $ Left $ "Usage is :" ++ name ++ " [<library>]"
-    try optArg <|> failure
+cmd_dynamic name = try parse <|> failure
+  where
+    parse = do l <- many anyChar
+               if (l /= "")
+                   then return $ Right (DynamicLink l)
+                   else return $ Right ListDynamic
+    failure = return $ Left $ "Usage is :" ++ name ++ " [<library>]"
 
 cmd_pprint :: String -> P.IdrisParser (Either String Command)
-cmd_pprint name = do
+cmd_pprint _ = do
      fmt <- ppFormat
      P.whiteSpace
      n <- fmap (fromInteger . fst) P.natural
      P.whiteSpace
      t <- P.fullExpr defaultSyntax
      return (Right (PPrint fmt n t))
-
-    where
-        ppFormat :: P.IdrisParser OutputFmt
-        ppFormat = (discard (P.symbol "html") >> return HTMLOutput)
-               <|> (discard (P.symbol "latex") >> return LaTeXOutput)
+  where
+    ppFormat :: P.IdrisParser OutputFmt
+    ppFormat = (P.symbol "html" >> return HTMLOutput)
+           <|> (P.symbol "latex" >> return LaTeXOutput)
 
 cmd_compile :: String -> P.IdrisParser (Either String Command)
 cmd_compile name = do
@@ -366,19 +385,17 @@ cmd_compile name = do
 
     let codegenOption :: P.IdrisParser Codegen
         codegenOption = do
-            let bytecodeCodegen = discard (P.symbol "bytecode") *> return Bytecode
+            let bytecodeCodegen = P.symbol "bytecode" *> return Bytecode
                 viaCodegen = do x <- fst <$> P.identifier
                                 return (Via IBCFormat (map toLower x))
             bytecodeCodegen <|> viaCodegen
 
     let hasOneArg = do
-        i <- get
         f <- fst <$> P.identifier
         eof
         return $ Right (Compile defaultCodegen f)
 
     let hasTwoArgs = do
-        i <- get
         codegen <- codegenOption
         f <- fst <$> P.identifier
         eof
@@ -388,7 +405,7 @@ cmd_compile name = do
     try hasTwoArgs <|> try hasOneArg <|> failure
 
 cmd_addproof :: String -> P.IdrisParser (Either String Command)
-cmd_addproof name = do
+cmd_addproof _ = do
     n <- option Nothing $ do
         x <- fst <$> P.name
         return (Just x)
@@ -396,13 +413,13 @@ cmd_addproof name = do
     return (Right (AddProof n))
 
 cmd_log :: String -> P.IdrisParser (Either String Command)
-cmd_log name = do
+cmd_log _ = do
     i <- fmap (fromIntegral . fst) P.natural
     eof
     return (Right (LogLvl i))
 
 cmd_cats :: String -> P.IdrisParser (Either String Command)
-cmd_cats name = do
+cmd_cats _ = do
     cs <- sepBy pLogCats (P.whiteSpace)
     eof
     return $ Right $ LogCategory (concat cs)
@@ -421,22 +438,21 @@ cmd_cats name = do
            <|> badCat
 
 cmd_let :: String -> P.IdrisParser (Either String Command)
-cmd_let name = do
+cmd_let _ = do
     defn <- concat <$> many (P.decl defaultSyntax)
     return (Right (NewDefn defn))
 
 cmd_unlet :: String -> P.IdrisParser (Either String Command)
-cmd_unlet name = (Right . Undefine) `fmap` many (fst <$> P.name)
+cmd_unlet _ = (Right . Undefine) `fmap` many (fst <$> P.name)
 
 cmd_loadto :: String -> P.IdrisParser (Either String Command)
-cmd_loadto name = do
+cmd_loadto _ = do
     toline <- fmap (fromInteger . fst) P.natural
     f <- many anyChar;
     return (Right (Load f (Just toline)))
 
 cmd_colour :: String -> P.IdrisParser (Either String Command)
-cmd_colour name = fmap Right pSetColourCmd
-
+cmd_colour _ = fmap Right pSetColourCmd
     where
         colours :: [(String, Maybe Color)]
         colours = [ ("black", Just Black)
@@ -454,8 +470,8 @@ cmd_colour name = fmap Right pSetColourCmd
         pSetColourCmd = (do c <- pColourType
                             let defaultColour = IdrisColour Nothing True False False False
                             opts <- sepBy pColourMod (P.whiteSpace)
-                            let colour = foldr ($) defaultColour $ reverse opts
-                            return $ SetColour c colour)
+                            let colour' = foldr ($) defaultColour $ reverse opts
+                            return $ SetColour c colour')
                     <|> try (P.symbol "on" >> return ColourOn)
                     <|> try (P.symbol "off" >> return ColourOff)
 
@@ -495,6 +511,7 @@ cmd_colour name = fmap Right pSetColourCmd
                                            (concat . intersperse ", " . map fst) colourTypes
                   doColourType ((s,ct):cts) = (try (P.symbol s) >> return ct) <|> doColourType cts
 
+idChar :: P.IdrisParser Char
 idChar = oneOf (['a'..'z'] ++ ['A'..'Z'] ++ ['0'..'9'] ++ ['_'])
 
 cmd_apropos :: String -> P.IdrisParser (Either String Command)
@@ -502,10 +519,10 @@ cmd_apropos = packageBasedCmd (some idChar) Apropos
 
 packageBasedCmd :: P.IdrisParser a -> ([String] -> a -> Command)
                 -> String -> P.IdrisParser (Either String Command)
-packageBasedCmd valParser cmd name =
-  try (do P.lchar '('
+packageBasedCmd valParser cmd _ =
+  try (do P.skipChar '('
           pkgs <- sepBy (some idChar) (P.lchar ',')
-          P.lchar ')'
+          P.skipChar ')'
           val <- valParser
           return (Right (cmd pkgs val)))
    <|> do val <- valParser
@@ -516,15 +533,15 @@ cmd_search = packageBasedCmd
   (P.fullExpr (defaultSyntax { implicitAllowed = True })) Search
 
 cmd_proofsearch :: String -> P.IdrisParser (Either String Command)
-cmd_proofsearch name = do
-    upd <- option False (do P.lchar '!'; return True)
+cmd_proofsearch _ = do
+    upd <- option False (do P.skipChar '!'; return True)
     l <- fmap (fromInteger . fst) P.natural; n <- fst <$> P.name
     hints <- many (fst <$> P.fnName)
     return (Right (DoProofSearch upd True l n hints))
 
 cmd_refine :: String -> P.IdrisParser (Either String Command)
-cmd_refine name = do
-   upd <- option False (do P.lchar '!'; return True)
+cmd_refine _ = do
+   upd <- option False (do P.skipChar '!'; return True)
    l <- fmap (fromInteger . fst) P.natural; n <- fst <$> P.name
    hint <- fst <$> P.fnName
    return (Right (DoProofSearch upd False l n [hint]))

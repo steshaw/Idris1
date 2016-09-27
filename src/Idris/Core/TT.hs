@@ -40,7 +40,7 @@ module Idris.Core.TT(
   , UConstraint(..), UCs, UExp(..), Universe(..)
   , addAlist, addBinder, addDef, allTTNames, arity, bindAll
   , bindingOf, bindTyArgs, caseName, constDocs, constIsType, deleteDefExact
-  , discard, emptyContext, emptyFC, explicitNames, fc_end, fc_fname
+  , emptyContext, emptyFC, explicitNames, fc_end, fc_fname
   , fc_start, fcIn, fileFC, finalise, fmapMB, forget, forgetEnv
   , freeNames, getArgTys, getRetTy, implicitable, instantiate, internalNS
   , intTyName, isInjective, isTypeConst, lookupCtxt
@@ -435,9 +435,6 @@ tfail e = Error e
 -- trun :: FC -> TC a -> TC a
 -- trun _  (OK a)    = OK a
 -- trun fc (Error e) = Error (At fc e)
-
-discard :: Monad m => m a -> m ()
-discard f = f >> return ()
 
 showSep :: String -> [String] -> String
 showSep _    [] = ""
