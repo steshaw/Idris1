@@ -9,6 +9,7 @@ import TestData
 import Control.Applicative
 import Control.Monad
 import Data.Char (isLetter)
+import Data.Proxy
 import Data.Typeable
 import qualified Data.IntMap as IMap
 
