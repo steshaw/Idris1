@@ -20,7 +20,7 @@ module Idris.Parser(module Idris.Parser,
 
 import Idris.Prelude hiding (pi)
 import Idris.AbsSyntax
-  ( getIState, putIState, getContext, setContext
+  ( getIState, putIState, updateIState, getContext, setContext
   , verbose, valIBCSubDir, allImportDirs, getAutoImports, getTotality
   , noErrors, getDumpHighlighting
   , setErrSpan, setAccessibility, setTotality
@@ -1726,15 +1726,14 @@ loadSource' lidr r maxLine
 loadSource :: Bool -> FilePath -> Maybe Int -> Idris ()
 loadSource lidr fileToLoad toline
              = do logParser 1 ("Reading " ++ fileToLoad)
-                  ist1 <- getIState
-                  let def_total = default_total ist1
+                  def_total <- default_total <$> getIState
                   file_in <- runIO $ readSource fileToLoad
                   file <- if lidr then tclift $ unlit fileToLoad file_in else return file_in
                   (mdocs, mname, imports_in, pos) <- parseImports fileToLoad file
                   ai <- getAutoImports
                   let imports = map (\n -> ImportInfo True n Nothing [] NoFC NoFC) ai ++ imports_in
                   ids <- allImportDirs
-                  ibcsd1 <- valIBCSubDir ist1
+                  ibcsd1 <- getIState >>= valIBCSubDir
                   mapM_ (\(path, nspace, importFC) ->
                                do fp <- findImport ids ibcsd1 path
                                   case fp of
@@ -1771,8 +1770,7 @@ loadSource lidr fileToLoad toline
                     []       -> logParser 3 $ "Module aliases: " ++ show (M.toList modAliases)
                     (n,fc):_ -> throwError . At fc . Msg $ "import alias not unique: " ++ show n
 
-                  ist2 <- getIState
-                  putIState (ist2 { default_access = Private, module_aliases = modAliases })
+                  updateIState (\ist -> ist { default_access = Private, module_aliases = modAliases })
                   clearIBC -- start a new .ibc file
                   -- record package info in .ibc
                   imps <- allImportDirs
@@ -1785,22 +1783,21 @@ loadSource lidr fileToLoad toline
                     ]
                   let syntax = defaultSyntax{ syn_namespace = reverse mname,
                                               maxline = toline }
-                  ist3 <- getIState
+
                   -- Save the span from parsing the module header, because
                   -- an empty program parse might obliterate it.
-                  let oldSpan = idris_parsedSpan ist3
+                  oldSpan <- idris_parsedSpan <$> getIState
                   ds' <- parseProg syntax fileToLoad file pos
 
                   case (ds', oldSpan) of
                     ([], Just fc) ->
-                      -- If no program elements were parsed, we dind't
+                      -- If no program elements were parsed, we didn't
                       -- get a loaded region in the IBC file. That
                       -- means we need to add it back.
-                      do ist4 <- getIState
-                         putIState ist4 { idris_parsedSpan = oldSpan
-                                        , ibc_write = IBCParsedRegion fc :
-                                                      ibc_write ist4
-                                        }
+                      updateIState $ \ist -> ist { idris_parsedSpan = oldSpan
+                                                 , ibc_write = IBCParsedRegion fc :
+                                                               ibc_write ist
+                                                 }
                     _ -> return ()
                   sendParserHighlighting
 
@@ -1808,9 +1805,10 @@ loadSource lidr fileToLoad toline
 
                   let ds = namespaces mname ds'
                   logParser 3 (show $ showDecls verbosePPOption ds)
-                  ist5 <- getIState
-                  logLvl 10 (show (toAlist (idris_implicits ist5)))
-                  logLvl 3 (show (idris_infixes ist5))
+                  implicits <- idris_implicits <$> getIState
+                  infixes <- idris_infixes <$> getIState
+                  logLvl 10 (show (toAlist implicits))
+                  logLvl 3 (show infixes)
                   -- Now add all the declarations to the context
                   v <- verbose
                   when v $ iputStrLn $ "Type checking " ++ fileToLoad
@@ -1818,44 +1816,49 @@ loadSource lidr fileToLoad toline
                   -- anything is a single definition, wrap it in a
                   -- mutual block on its own
                   elabDecls (toplevelWith fileToLoad) (map toMutual ds)
-                  ist6 <- getIState
+
                   -- simplify every definition do give the totality checker
                   -- a better chance
+                  erasureInfo <- getErasureInfo <$> getIState
+                  totcheck1 <- idris_totcheck <$> getIState
                   mapM_ (\n -> do logLvl 5 $ "Simplifying " ++ show n
                                   ctxt' <-
                                     do ctxt <- getContext
-                                       tclift $ simplifyCasedef n (getErasureInfo ist6) ctxt
+                                       tclift $ simplifyCasedef n erasureInfo ctxt
                                   setContext ctxt')
-                           (map snd (idris_totcheck ist6))
+                           (map snd totcheck1)
+
                   -- build size change graph from simplified definitions
                   logLvl 1 "Totality checking"
-                  ist7 <- getIState
-                  mapM_ buildSCG (idris_totcheck ist7)
-                  mapM_ checkDeclTotality (idris_totcheck ist7)
-                  mapM_ verifyTotality (idris_totcheck ist7)
+
+                  totcheck2 <- idris_totcheck <$> getIState
+                  mapM_ buildSCG totcheck2
+                  mapM_ checkDeclTotality totcheck2
+                  mapM_ verifyTotality totcheck2
 
                   -- Redo totality check for deferred names
-                  let deftots = idris_defertotcheck ist7
-                  logLvl 2 $ "Totality checking " ++ show deftots
+                  deferTotCheck <- idris_defertotcheck <$> getIState
+                  flags <- idris_flags <$> getIState
+                  logLvl 2 $ "Totality checking " ++ show deferTotCheck
                   mapM_ (\x -> do tot <- getTotality x
                                   case tot of
                                        Total _ ->
-                                         do let opts = case lookupCtxtExact x (idris_flags ist7) of
+                                         do let opts = case lookupCtxtExact x flags of
                                                           Just os -> os
                                                           Nothing -> []
                                             when (AssertTotal `notElem` opts) $
                                                 setTotality x Unchecked
-                                       _ -> return ()) (map snd deftots)
-                  mapM_ buildSCG deftots
-                  mapM_ checkDeclTotality deftots
+                                       _ -> return ()) (map snd deferTotCheck)
+                  mapM_ buildSCG deferTotCheck
+                  mapM_ checkDeclTotality deferTotCheck
 
                   logLvl 1 ("Finished " ++ fileToLoad)
-                  ibcsd2 <- valIBCSubDir ist7
+                  ibcsd2 <- getIState >>= valIBCSubDir
                   logLvl 1 "Universe checking"
                   iucheck
                   let ibc = ibcPathNoFallback ibcsd2 fileToLoad
-                  ist8 <- getIState
-                  addHides (hide_list ist8)
+                  getIState >>= \ist ->
+                    addHides (hide_list ist)
 
                   -- Save module documentation if applicable
                   case mdocs of
@@ -1872,9 +1875,8 @@ loadSource lidr fileToLoad toline
                          idrisCatch (writeHighlights fileToLoad)
                                     (const $ return ()) -- failure is harmless
                   clearHighlights
-                  i <- getIState
-                  putIState (i { default_total = def_total,
-                                 hide_list = emptyContext })
+                  updateIState $ \i -> i { default_total = def_total
+                                         , hide_list = emptyContext }
                   return ()
   where
     namespaces :: [String] -> [PDecl] -> [PDecl]
