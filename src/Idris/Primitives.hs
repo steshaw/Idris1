@@ -6,18 +6,20 @@ License     : BSD3
 Maintainer  : The Idris Community.
 -}
 
+{-# LANGUAGE NoImplicitPrelude #-}
+{-# LANGUAGE PatternGuards #-}
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE PatternGuards #-}
 
 module Idris.Primitives(primitives, Prim(..)) where
 
-import IRTS.Lang
-
+import Idris.Prelude
 import Idris.Core.TT
 import Idris.Core.Evaluate
+import IRTS.Lang
+
 import Data.Bits
--- import Data.Word -- XXX: Unused.
+import Data.Word
 import Data.Int
 import Data.Char
 import Data.Function (on)
