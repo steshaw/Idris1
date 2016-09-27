@@ -6,16 +6,18 @@ License     : BSD3
 Maintainer  : The Idris Community.
 -}
 
-{-# OPTIONS_GHC -fwarn-incomplete-patterns #-}
-{-# OPTIONS_GHC -fwarn-unused-imports #-}
+{-# OPTIONS_GHC -Wall #-}
+{-# LANGUAGE NoImplicitPrelude #-}
 
 module Idris.REPL.Browse (namespacesInNS, namesInNS) where
 
+import Idris.Prelude
 import Idris.Core.Evaluate (ctxtAlist, Accessibility(Private, Hidden), lookupDefAccExact)
 import Idris.Core.TT (Name(..))
-import Idris.AbsSyntaxTree (Idris)
 import Idris.AbsSyntax (getContext)
+import Idris.AbsSyntaxTree (Idris)
 
+import Control.Applicative
 import Control.Monad (filterM)
 import Data.List (isSuffixOf, nub)
 import Data.Maybe (mapMaybe)
@@ -26,7 +28,7 @@ import qualified Data.Text as T (unpack)
 -- inside of NS constructors.
 namespacesInNS :: [String] -> Idris [[String]]
 namespacesInNS ns = do let revNS = reverse ns
-                       allNames <- fmap ctxtAlist getContext
+                       allNames <- ctxtAlist <$> getContext
                        return . nub $
                          [ reverse space | space <- mapMaybe (getNS . fst) allNames
                                          , revNS `isSuffixOf` space
