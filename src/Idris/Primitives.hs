@@ -5,24 +5,23 @@ Copyright   :
 License     : BSD3
 Maintainer  : The Idris Community.
 -}
-{-# LANGUAGE RankNTypes, ScopedTypeVariables, PatternGuards #-}
+
+{-# LANGUAGE RankNTypes #-}
+{-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE PatternGuards #-}
 
 module Idris.Primitives(primitives, Prim(..)) where
-
-import Idris.AbsSyntax
 
 import IRTS.Lang
 
 import Idris.Core.TT
 import Idris.Core.Evaluate
 import Data.Bits
-import Data.Word
+-- import Data.Word -- XXX: Unused.
 import Data.Int
 import Data.Char
 import Data.Function (on)
-import qualified Data.Vector.Unboxed as V
 
-import Debug.Trace
 
 data Prim = Prim { p_name  :: Name,
                    p_type  :: Type,
@@ -36,10 +35,11 @@ ty :: [Const] -> Const -> Type
 ty []     x = Constant x
 ty (t:ts) x = Bind (sMN 0 "T") (Pi Nothing (Constant t) (TType (UVar [] (-3)))) (ty ts x)
 
-total, partial, iopartial :: Totality
+total, partial :: Totality
 total = Total []
 partial = Partial NotCovering
-iopartial = Partial ExternalIO
+-- XXX: Unused
+-- iopartial = Partial ExternalIO
 
 primitives :: [Prim]
 primitives =
@@ -237,35 +237,43 @@ intConv ity =
                (1, LFloatInt ity) total
     ]
 
-bitcastPrim :: ArithTy -> ArithTy -> (ArithTy -> [Const] -> Maybe Const) -> PrimFn -> Prim
-bitcastPrim from to impl prim =
-    Prim (sUN $ "prim__bitcast" ++ aTyName from ++ "_" ++ aTyName to) (ty [AType from] (AType to)) 1 (impl to)
-         (1, prim) total
+-- XXX: Unused
+-- bitcastPrim :: ArithTy -> ArithTy -> (ArithTy -> [Const] -> Maybe Const) -> PrimFn -> Prim
+-- bitcastPrim from to impl prim =
+--     Prim (sUN $ "prim__bitcast" ++ aTyName from ++ "_" ++ aTyName to) (ty [AType from] (AType to)) 1 (impl to)
+--          (1, prim) total
 
-concatWord8 :: (Word8, Word8) -> Word16
-concatWord8 (high, low) = fromIntegral high .|. (fromIntegral low `shiftL` 8)
+-- XXX: Unused
+-- concatWord8 :: (Word8, Word8) -> Word16
+-- concatWord8 (high, low) = fromIntegral high .|. (fromIntegral low `shiftL` 8)
 
-concatWord16 :: (Word16, Word16) -> Word32
-concatWord16 (high, low) = fromIntegral high .|. (fromIntegral low `shiftL` 16)
+-- XXX: Unused
+-- concatWord16 :: (Word16, Word16) -> Word32
+-- concatWord16 (high, low) = fromIntegral high .|. (fromIntegral low `shiftL` 16)
 
-concatWord32 :: (Word32, Word32) -> Word64
-concatWord32 (high, low) = fromIntegral high .|. (fromIntegral low `shiftL` 32)
+-- XXX: Unused
+-- concatWord32 :: (Word32, Word32) -> Word64
+-- concatWord32 (high, low) = fromIntegral high .|. (fromIntegral low `shiftL` 32)
 
-truncWord16 :: Bool -> Word16 -> Word8
-truncWord16 True x = fromIntegral (x `shiftR` 8)
-truncWord16 False x = fromIntegral x
+-- XXX: Unused
+-- truncWord16 :: Bool -> Word16 -> Word8
+-- truncWord16 True x = fromIntegral (x `shiftR` 8)
+-- truncWord16 False x = fromIntegral x
 
-truncWord32 :: Bool -> Word32 -> Word16
-truncWord32 True x = fromIntegral (x `shiftR` 16)
-truncWord32 False x = fromIntegral x
+-- XXX: Unused
+-- truncWord32 :: Bool -> Word32 -> Word16
+-- truncWord32 True x = fromIntegral (x `shiftR` 16)
+-- truncWord32 False x = fromIntegral x
 
-truncWord64 :: Bool -> Word64 -> Word32
-truncWord64 True x = fromIntegral (x `shiftR` 32)
-truncWord64 False x = fromIntegral x
+-- XXX: Unused
+-- truncWord64 :: Bool -> Word64 -> Word32
+-- truncWord64 True x = fromIntegral (x `shiftR` 32)
+-- truncWord64 False x = fromIntegral x
 
-aTyName :: ArithTy -> String
-aTyName (ATInt t) = intTyName t
-aTyName ATFloat = "Float"
+-- XXX: Unused
+-- aTyName :: ArithTy -> String
+-- aTyName (ATInt t) = intTyName t
+-- aTyName ATFloat = "Float"
 
 iCmp  :: IntTy -> String -> Bool -> ([Const] -> Maybe Const) -> (IntTy -> PrimFn) -> Totality -> Prim
 iCmp ity op self impl irop totality
@@ -297,10 +305,11 @@ bfBin op [Fl x, Fl y] = let i = (if op x y then 1 else 0) in
                         Just $ I i
 bfBin _ _ = Nothing
 
-bcBin :: (Char -> Char -> Bool) -> [Const] -> Maybe Const
-bcBin op [Ch x, Ch y] = let i = (if op x y then 1 else 0) in
-                        Just $ I i
-bcBin _ _ = Nothing
+-- XXX: Unused
+-- bcBin :: (Char -> Char -> Bool) -> [Const] -> Maybe Const
+-- bcBin op [Ch x, Ch y] = let i = (if op x y then 1 else 0) in
+--                         Just $ I i
+-- bcBin _ _ = Nothing
 
 bsBin :: (String -> String -> Bool) -> [Const] -> Maybe Const
 bsBin op [Str x, Str y]
@@ -384,14 +393,13 @@ bCmp ITNative op [I x, I y]     = Just $ I (if (op x y) then 1 else 0)
 bCmp ITChar   op [Ch x, Ch y]     = Just $ I (if (op (ord x) (ord y)) then 1 else 0)
 bCmp _        _  _              = Nothing
 
-
-cmpOp :: (Ord a, Integral a) => IntTy -> (forall b. Ord b => b -> b -> Bool) -> a -> a -> Bool
+cmpOp :: Integral a => IntTy -> (forall b. Ord b => b -> b -> Bool) -> a -> a -> Bool
 cmpOp (ITFixed _) f = f
 cmpOp (ITNative)  f = f `on` (fromIntegral :: Integral a => a -> Word)
 cmpOp (ITChar)    f = f `on` ((fromIntegral :: Integral a => a -> Word))
-cmpOp _ f = let xor = (/=) in (\ x y -> (f x y) `xor` (x < 0) `xor` (y < 0))
+cmpOp _ f = let xorOp = (/=) in (\ x y -> (f x y) `xorOp` (x < 0) `xorOp` (y < 0))
 
-sCmpOp :: (Ord a, Integral a) => IntTy -> (forall b. Ord b => b -> b -> Bool) -> a -> a -> Bool
+sCmpOp :: Integral a => IntTy -> (forall b. Ord b => b -> b -> Bool) -> a -> a -> Bool
 sCmpOp (ITFixed IT8) f = f `on` (fromIntegral :: Integral a => a -> Int8)
 sCmpOp (ITFixed IT16) f = f `on` (fromIntegral :: Integral a => a -> Int16)
 sCmpOp (ITFixed IT32) f = f `on` (fromIntegral :: Integral a => a -> Int32)
@@ -482,6 +490,8 @@ c_negFloat _      = Nothing
 c_floatToStr :: [Const] -> Maybe Const
 c_floatToStr [Fl x] = Just $ Str (show x)
 c_floatToStr _ = Nothing
+
+c_strToFloat :: [Const] -> Maybe Const
 c_strToFloat [Str x] = case reads x of
                          [(n,"")] -> Just $ Fl n
                          _ -> Just $ Fl 0
@@ -489,7 +499,7 @@ c_strToFloat _ = Nothing
 
 p_fPrim :: (Double -> Double) -> [Const] -> Maybe Const
 p_fPrim f [Fl x] = Just $ Fl (f x)
-p_fPrim f _ = Nothing
+p_fPrim _ _ = Nothing
 
 p_floatExp, p_floatLog, p_floatSin, p_floatCos, p_floatTan, p_floatASin, p_floatACos, p_floatATan, p_floatSqrt, p_floatFloor, p_floatCeil :: [Const] -> Maybe Const
 p_floatExp = p_fPrim exp
@@ -507,9 +517,9 @@ p_floatCeil = p_fPrim (fromInteger . ceiling)
 p_strLen, p_strHead, p_strTail, p_strIndex, p_strCons, p_strRev, p_strSubstr :: [Const] -> Maybe Const
 p_strLen [Str xs] = Just $ I (length xs)
 p_strLen _ = Nothing
-p_strHead [Str (x:xs)] = Just $ Ch x
+p_strHead [Str (x:_)] = Just $ Ch x
 p_strHead _ = Nothing
-p_strTail [Str (x:xs)] = Just $ Str xs
+p_strTail [Str (_:xs)] = Just $ Str xs
 p_strTail _ = Nothing
 p_strIndex [Str xs, I i]
    | i < length xs = Just $ Ch (xs!!i)
@@ -518,9 +528,8 @@ p_strCons [Ch x, Str xs] = Just $ Str (x:xs)
 p_strCons _ = Nothing
 p_strRev [Str xs] = Just $ Str (reverse xs)
 p_strRev _ = Nothing
-p_strSubstr [I offset, I length, Str input] = Just $ Str (take length (drop offset input))
+p_strSubstr [I offset, I len, Str input] = Just $ Str (take len (drop offset input))
 p_strSubstr _ = Nothing
-
 
 p_cantreduce :: a -> Maybe b
 p_cantreduce _ = Nothing
