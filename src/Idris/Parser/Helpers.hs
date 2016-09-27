@@ -21,7 +21,16 @@ Maintainer  : The Idris Community.
 module Idris.Parser.Helpers where
 
 import Idris.Prelude hiding (pi)
-import Idris.AbsSyntax
+import Idris.AbsSyntax (getIState, putIState)
+import Idris.AbsSyntaxTree
+  ( PTerm, PDecl, PDecl'(..), PClause, PClause'(..)
+  , Opt
+  , IOption (opt_cmdline)
+  , Idris, IState ( lastTokenSpan, idris_parserHighlights, parserWarnings
+                  , indent_stack, brace_stack, hide_list, default_access
+                  , idris_options, syntax_keywords, module_aliases
+                  )
+  )
 import Idris.Core.TT
   ( Name(..), sUN, sNS
   , addDef -- Context function
@@ -144,7 +153,6 @@ reportParserWarnings = do ist <- getIState
                                          FC' fc == FC' fc' && err == err') $
                                  parserWarnings ist)
                           clearParserWarnings
-
 
 parserWarning :: FC -> Maybe Opt -> Err -> IdrisParser ()
 parserWarning fc warnOpt warnErr = do
