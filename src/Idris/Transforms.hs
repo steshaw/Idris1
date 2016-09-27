@@ -6,7 +6,9 @@ License     : BSD3
 Maintainer  : The Idris Community.
 -}
 
+{-# OPTIONS_GHC -Wall #-}
 {-# LANGUAGE PatternGuards #-}
+{-# LANGUAGE NoImplicitPrelude #-}
 
 module Idris.Transforms(
     transformPats
@@ -15,11 +17,10 @@ module Idris.Transforms(
   , applyTransRules
   ) where
 
-import Idris.AbsSyntax
-import Idris.Core.CaseTree
+import Idris.Prelude
+import Idris.AbsSyntaxTree (IState (idris_transforms))
 import Idris.Core.TT
 
-import Debug.Trace
 
 transformPats :: IState -> [Either Term (Term, Term)] ->
                 [Either Term (Term, Term)]
@@ -50,7 +51,7 @@ applyTransRulesWith rules tm
 
 applyAll :: [(Term, Term)] -> Ctxt [(Term, Term)] -> Term -> Term
 applyAll extra ts ap@(App s f a)
-    | (P _ fn ty, args) <- unApply ap
+    | (P _ fn _, _) <- unApply ap
          = let rules = case lookupCtxtExact fn ts of
                             Just r -> extra ++ r
                             Nothing -> extra
@@ -58,24 +59,24 @@ applyAll extra ts ap@(App s f a)
                case rules of
                     [] -> ap'
                     rs -> case applyFnRules rs ap of
-                                   Just tm'@(App s f' a') ->
-                                     App s (applyAll extra ts f')
-                                           (applyAll extra ts a')
+                                   Just (App s' f' a') ->
+                                     App s' (applyAll extra ts f')
+                                            (applyAll extra ts a')
                                    Just tm' -> tm'
                                    _ -> App s (applyAll extra ts f)
                                               (applyAll extra ts a)
 applyAll extra ts (Bind n b sc) = Bind n (fmap (applyAll extra ts) b)
                                          (applyAll extra ts sc)
-applyAll extra ts t = t
+applyAll _     _  t = t
 
 applyFnRules :: [(Term, Term)] -> Term -> Maybe Term
-applyFnRules [] tm = Nothing
+applyFnRules [] _ = Nothing
 applyFnRules (r : rs) tm | Just tm' <- applyRule r tm = Just tm'
                          | otherwise = applyFnRules rs tm
 
 applyRule :: (Term, Term) -> Term -> Maybe Term
-applyRule (lhs, rhs) tm
-    | Just ms <- matchTerm lhs tm
+applyRule (lhs, rhs) term
+    | Just ms <- matchTerm lhs term
 --          = trace ("SUCCESS " ++ show ms ++ "\n FROM\n" ++ show lhs ++
 --                   "\n" ++ show rhs
 --                   ++ "\n" ++ show tm ++ " GIVES\n" ++ show (depat ms rhs)) $
@@ -86,14 +87,14 @@ applyRule (lhs, rhs) tm
 -- (In general, this would not be true, but when we elaborate transformation
 -- rules we mangle the names so that it is true. While this feels a bit
 -- hacky, it's much easier to think about than mangling de Bruijn indices).
-  where depat ms (Bind n (PVar t) sc)
+  where depat ms (Bind n (PVar _) sc)
           = case lookup n ms of
                  Just tm -> depat ms (subst n tm sc)
                  _ -> depat ms sc -- no occurrence? Shouldn't happen
-        depat ms tm = tm
+        depat _  tm = tm
 
 matchTerm :: Term -> Term -> Maybe [(Name, Term)]
-matchTerm lhs tm = matchVars [] lhs tm
+matchTerm lhs term = matchVars [] lhs term
    where
       matchVars acc (Bind n (PVar t) sc) tm
            = matchVars (n : acc) (instantiate (P Bound n t) sc) tm
@@ -108,5 +109,5 @@ matchTerm lhs tm = matchVars [] lhs tm
            = do fm <- doMatch ns f f'
                 am <- doMatch ns a a'
                 return (fm ++ am)
-      doMatch ns x y | vToP x == vToP y = return []
+      doMatch _  x y | vToP x == vToP y = return []
                      | otherwise = Nothing
