@@ -201,6 +201,7 @@ Library
                 , Idris.Parser.Expr
                 , Idris.Parser.Data
                 , Idris.PartialEval
+                , Idris.Prelude
                 , Idris.Primitives
                 , Idris.ProofSearch
                 , Idris.Prover
@@ -244,7 +245,6 @@ Library
                 , Util.Net
 
                 , Idris.Package.Parser
-                , Idris.Prelude
 
                 -- Auto Generated
                 , Paths_idris
