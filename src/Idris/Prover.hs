@@ -7,17 +7,11 @@ Maintainer  : The Idris Community.
 -}
 
 {-# LANGUAGE PatternGuards #-}
+{-# LANGUAGE NoImplicitPrelude #-}
 
 module Idris.Prover (prover, showProof, showRunElab) where
 
--- Hack for GHC 7.10 and earlier compat without CPP or warnings
--- This exludes (<$>) as fmap, because wl-pprint uses it for newline
-import Prelude (Eq(..), Show(..),
-                Bool(..), Either(..), Maybe(..), String,
-                (.), ($), (++), (||), (&&),
-                concatMap, id, elem, error, fst, flip, foldl, foldr, init,
-                length, lines, map, not, null, repeat, reverse, tail, zip)
-
+import Idris.Prelude
 import Idris.Core.Elaborate hiding (Tactic(..))
 import Idris.Core.TT
 import Idris.Core.Evaluate
@@ -47,7 +41,7 @@ import Idris.AbsSyntaxTree
   , OutputMode(..)
   , getErasureInfo
   , toplevel
-  , prettyName , ppOptionIst , pprintPTerm , prettyImp, ppOption
+  , prettyName, ppOptionIst, pprintPTerm, prettyImp, ppOption
   , HowMuchDocs(..)
   )
 import Idris.Delaborate
@@ -61,15 +55,17 @@ import qualified Idris.IdeMode as IdeMode
 import Idris.Output
 import Idris.TypeSearch (searchByType)
 
-import Text.Trifecta.Result(Result(..), ErrInfo(..))
+import Util.Pretty
 
+import Data.List (foldl')
 import System.IO (Handle, stdin, stdout, hPutStrLn)
 import System.Console.Haskeline
 import System.Console.Haskeline.History
 import Control.Monad.State.Strict
 import Control.DeepSeq
 
-import Util.Pretty
+import Text.Trifecta.Result(Result(..), ErrInfo(..))
+
 
 -- | Launch the proof shell
 prover :: ElabInfo -> Bool -> Bool -> Name -> Idris ()
@@ -494,8 +490,8 @@ ploop fn d prompt prf e h
                              (ploop fn d prompt prf' st h')
                              (ploop fn d prompt prf e h')
 
-
-envCtxt env ctxt = foldl (\c (n, b) -> addTyDecl n Bound (binderTy b) c) ctxt env
+envCtxt :: [(Name, Binder Type)] -> Context -> Context
+envCtxt env ctxt = foldl' (\c (n, b) -> addTyDecl n Bound (binderTy b) c) ctxt env
 
 checkNameType :: ElabState EState -> [String] -> Name -> Idris (Bool, ElabState EState, Bool, [String], Either Err (Idris ()))
 checkNameType e prf n = do
