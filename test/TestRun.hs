@@ -1,9 +1,12 @@
 {-# OPTIONS_GHC -Wall #-}
+{-# LANGUAGE NoImplicitPrelude #-}
 
 module Main where
 
+import Idris.Prelude
 import TestData
 
+import Control.Applicative
 import Control.Monad
 import Data.Char (isLetter)
 import Data.Typeable
