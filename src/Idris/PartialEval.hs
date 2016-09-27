@@ -5,6 +5,8 @@ Copyright   :
 License     : BSD3
 Maintainer  : The Idris Community.
 -}
+
+{-# LANGUAGE NoImplicitPrelude #-}
 {-# LANGUAGE PatternGuards #-}
 
 module Idris.PartialEval(
@@ -13,7 +15,15 @@ module Idris.PartialEval(
   , pe_app, pe_def, pe_clauses, pe_simple
   ) where
 
-import Idris.AbsSyntax
+import Idris.Prelude
+import Idris.AbsSyntaxTree
+  ( PTerm(..), PArg'(..), mapPT
+  , pexp
+  , expl, impl, constraint
+  , IState ( tt_ctxt, idris_interfaces, idris_patdefs, idris_metavars
+           , idris_statics, idris_implicits
+           )
+  )
 import Idris.Delaborate
 
 import Idris.Core.TT
@@ -22,8 +32,6 @@ import Idris.Core.Evaluate
 
 import Control.Monad.State
 import Control.Applicative
-import Data.Maybe
-import Debug.Trace
 
 -- | Data type representing binding-time annotations for partial evaluation of arguments
 data PEArgType = ImplicitS -- ^ Implicit static argument
@@ -161,7 +169,7 @@ mkPE_TyDecl ist args ty = mkty args ty
     gen tm = return tm
 
 -- | Checks if a given argument is an interface constraint argument
-interfaceConstraint :: Idris.AbsSyntax.IState -> TT Name -> Bool
+interfaceConstraint :: IState -> TT Name -> Bool
 interfaceConstraint ist v
     | (P _ c _, args) <- unApply v = case lookupCtxt c (idris_interfaces ist) of
                                           [_] -> True
