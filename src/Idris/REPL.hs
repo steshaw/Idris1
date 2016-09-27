@@ -4,8 +4,11 @@ Description : Entry Point for the Idris REPL and CLI.
 License     : BSD3
 Maintainer  : The Idris Community.
 -}
-{-# LANGUAGE MultiParamTypeClasses, FlexibleInstances, DeriveFunctor,
-             PatternGuards, CPP #-}
+
+{-# LANGUAGE DeriveFunctor #-}
+{-# LANGUAGE PatternGuards #-}
+{-# LANGUAGE NoImplicitPrelude #-}
+
 module Idris.REPL
   ( idemodeStart
   , startServer
@@ -16,8 +19,38 @@ module Idris.REPL
   , proofs
   ) where
 
+import Idris.Prelude hiding ( (.), id )
 import Idris.AbsSyntax
+  ( getIState, putIState, getContext, updateContext
+  , colourise, codegen, getCmdLine
+  , setErrContext, setQuiet, setVerbose, setIdeMode, isetPrompt
+  , setImpShow, totcheck, setTotality, clearErr, setLogLevel
+  , setLogCats, setShowOrigErr, setAutoSolve, setNoBanner
+  , setEvalTypes, setDesugarNats, setColour, setWidth, setDepth
+  , runIO, logParser
+  , type1Doc
+  )
+import Idris.AbsSyntaxTree
+  ( PTerm (..), PDecl, PDecl' (..), PClause, PClause' (..), PData' (..)
+  , pprintPTerm, showDecls, prettyIst, showTm, showName
+  , pexp
+  , primDefs, prettyName, modDocName
+  , OutputMode (..)
+  , PPOption (..), verbosePPOption
+  , Opt (..)
+  , IOption (..)
+  , HowMuchDocs (..)
+  , ElabWhat (..)
+  , FixDecl (..)
+  , Idris, IState (..)
+  , toplevelWith
+  , ppOptionIst
+  )
 import Idris.ASTUtils
+  ( fputState, fmodifyState
+  , ctxt_lookup, idris_fixities, repl_definitions
+  , known_terms, known_interfaces, opts_idrisCmdline
+  )
 import Idris.Apropos (apropos, aproposModules)
 import Idris.REPL.Parser
 import Idris.Error
@@ -67,11 +100,10 @@ import IRTS.Compiler
 
 import Control.Category
 import qualified Control.Exception as X
-import Prelude hiding ((<$>), (.), id)
 import Data.List.Split (splitOn)
 import qualified Data.Text as T
 
-import Text.Trifecta.Result(Result(..), ErrInfo(..))
+import Text.Trifecta.Result ( Result (..), ErrInfo (..) )
 
 import System.Console.Haskeline as H
 import System.FilePath
@@ -89,8 +121,8 @@ import System.Process
 import System.Directory
 import System.IO
 import Control.Monad
-import Control.Monad.Trans.Except (ExceptT, runExceptT)
-import Control.Monad.Trans.State.Strict ( StateT, execStateT, evalStateT, get, put )
+import Control.Monad.Trans.Except (runExceptT)
+import Control.Monad.Trans.State.Strict ( evalStateT, get, put )
 import Control.Monad.Trans ( lift )
 import Control.Concurrent.MVar
 import Network
