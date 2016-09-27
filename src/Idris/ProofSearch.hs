@@ -19,12 +19,18 @@ import Idris.Core.Elaborate hiding (Tactic(..))
 import Idris.Core.TT
 import Idris.Core.Unify
 import Idris.Core.Evaluate
-import Idris.Core.CaseTree
-import Idris.Core.Typecheck
 
-import Idris.AbsSyntax
+import Idris.AbsSyntaxTree
+  ( PTerm(..), PArg'(..)
+  , getPArity
+  , eqCon, pimp
+  , ElabD, InterfaceInfo(..), TIData(..)
+  , IState ( tt_ctxt, idris_interfaces, idris_implicits, idris_tyinfodata
+           , idris_autohints, idris_datatypes, idris_openimpls
+           , elab_stack
+           )
+  )
 import Idris.Delaborate
-import Idris.Error
 
 import Control.Applicative ((<$>))
 import Control.Monad
