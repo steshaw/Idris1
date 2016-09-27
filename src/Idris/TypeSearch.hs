@@ -7,8 +7,8 @@ Maintainer  : The Idris Community.
 -}
 
 {-# OPTIONS_GHC -Wall #-}
-{-# OPTIONS_GHC -fno-warn-unused-binds #-}
-{-# OPTIONS_GHC -fno-warn-dodgy-imports #-}
+{-# OPTIONS_GHC -fno-warn-unused-binds #-} -- XXX: Fix these warnings.
+{-# LANGUAGE NoImplicitPrelude #-}
 
 module Idris.TypeSearch (
     searchByType
@@ -16,7 +16,35 @@ module Idris.TypeSearch (
   , defaultScoreFunction
   ) where
 
-import Prelude hiding (pred, Applicative(..), (<$>), (<*>), Monoid(..), traverse)
+import Idris.Prelude hiding (pred)
+
+import Idris.AbsSyntax
+  ( getIState, putIState
+  , implicit
+  , addUsingConstraints, addImpl
+  )
+import Idris.AbsSyntaxTree
+  ( PTerm
+  , eqTy
+  , toplevel
+  , InterfaceInfo ( interface_implementations )
+  , SyntaxInfo ( implicitAllowed ), defaultSyntax
+  , OutputMode (..)
+  , Idris , IState ( idris_interfaces, idris_docstrings, tt_ctxt, idris_outputmode )
+  )
+import Idris.Core.Evaluate ( Context (definitions), Def (Function, TyDecl, CaseOp), normaliseC )
+import Idris.Core.TT
+import Idris.Core.Unify    ( match_unify )
+import Idris.Delaborate    ( delabTy )
+import Idris.Docstrings    ( noDocs, overview )
+import Idris.Elab.Type     ( elabType )
+import Idris.Output        ( iputStrLn, iRenderOutput, iPrintResult, iRenderError
+                           , iRenderResult, prettyDocumentedIst
+                           )
+import Idris.IBC
+
+import Util.Pretty ( text, char, vsep, (<>), Doc, annotate )
+
 import Control.Applicative ((<$>), (<*>), (<|>))
 import Control.Arrow       (first, second, (&&&), (***))
 import Control.Monad       (when, guard)
@@ -31,21 +59,6 @@ import           Data.Set                           (Set)
 import qualified Data.Set                      as S
 import qualified Data.Text                     as T (pack, isPrefixOf)
 import           Data.Traversable                   (traverse)
-
-import Idris.AbsSyntax     (addUsingConstraints, addImpl, getIState, putIState, implicit)
-import Idris.AbsSyntaxTree (interface_implementations, InterfaceInfo, defaultSyntax, eqTy, Idris
-                           , IState (idris_interfaces, idris_docstrings, tt_ctxt, idris_outputmode),
-                           implicitAllowed, OutputMode(..), PTerm, toplevel)
-import Idris.Core.Evaluate (Context (definitions), Def (Function, TyDecl, CaseOp), normaliseC)
-import Idris.Core.TT
-import Idris.Core.Unify    (match_unify)
-import Idris.Delaborate    (delabTy)
-import Idris.Docstrings    (noDocs, overview)
-import Idris.Elab.Type     (elabType)
-import Idris.Output        (iputStrLn, iRenderOutput, iPrintResult, iRenderError, iRenderResult, prettyDocumentedIst)
-import Idris.IBC
-
-import Util.Pretty (text, char, vsep, (<>), Doc, annotate)
 
 searchByType :: [String] -> PTerm -> Idris ()
 searchByType pkgs pterm = do
