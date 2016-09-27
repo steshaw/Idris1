@@ -5,9 +5,16 @@ Copyright   :
 License     : BSD3
 Maintainer  : The Idris Community.
 -}
+
+{-# OPTIONS_GHC -Wall #-}
+{-# LANGUAGE NoImplicitPrelude #-}
+
 module Idris.WhoCalls (whoCalls, callsWho) where
 
-import Idris.AbsSyntax
+import Idris.Prelude
+
+import Idris.AbsSyntax (getContext)
+import Idris.AbsSyntaxTree (Idris)
 
 import Idris.Core.CaseTree
 import Idris.Core.Evaluate
@@ -17,12 +24,12 @@ import Data.List (nub)
 
 
 occurs :: Name -> Term -> Bool
-occurs n (P Bound _ _) = False
+occurs _ (P Bound _ _) = False
 occurs n (P _ n' _) = n == n'
 occurs n (Bind _ b sc) = occursBinder n b || occurs n sc
 occurs n (App _ t1 t2) = occurs n t1 || occurs n t2
 occurs n (Proj t _) = occurs n t
-occurs n _ = False
+occurs _ _ = False
 
 names :: Term -> [Name]
 names (P Bound _ _) = []
@@ -46,7 +53,7 @@ occursSC :: Name -> SC -> Bool
 occursSC n (Case _ _ alts) = any (occursCaseAlt n) alts
 occursSC n (ProjCase t alts) = occurs n t || any (occursCaseAlt n) alts
 occursSC n (STerm t) = occurs n t
-occursSC n _ = False
+occursSC _ _ = False
 
 namesSC :: SC -> [Name]
 namesSC (Case _ _ alts) = concatMap namesCaseAlt alts
@@ -89,12 +96,12 @@ findOccurs n = do ctxt <- getContext
 
 whoCalls :: Name -> Idris [(Name, [Name])]
 whoCalls n = do ctxt <- getContext
-                let names = lookupNames n ctxt
+                let names' = lookupNames n ctxt
                     find nm = do ns <- findOccurs nm
                                  return (nm, nub ns)
-                mapM find names
+                mapM find names'
 
 callsWho :: Name -> Idris [(Name, [Name])]
-callsWho n = do ctxt <- getContext
-                let defs = lookupNameDef n ctxt
-                return $ map (\ (n, def) -> (n, nub $ namesDef def)) defs
+callsWho nm = do ctxt <- getContext
+                 let defs = lookupNameDef nm ctxt
+                 return $ map (\(n, def) -> (n, nub $ namesDef def)) defs
