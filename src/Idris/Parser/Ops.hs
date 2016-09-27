@@ -16,9 +16,14 @@ module Idris.Parser.Ops where
 
 import Idris.Prelude hiding (pi)
 
-import Idris.AbsSyntax
+import Idris.AbsSyntaxTree
+  ( PTerm(..), PDecl, PDecl'(..), PData'(..), FixDecl(..), Fixity(..)
+  , pexp, eqTy
+  , IBCWrite(IBCFix)
+  , IState(idris_infixes, ibc_write)
+  )
 import Idris.Parser.Helpers
-import Idris.Core.TT
+import Idris.Core.TT (Name(..), sUN, FC(..), str)
 
 import Control.Applicative
 import Control.Monad
@@ -133,7 +138,7 @@ fixity = do pushIndent
             let ill     = filter (not . checkValidity) redecls
             if null ill
                then do put (istate { idris_infixes = nub $ sort (fs ++ infixes)
-                                     , ibc_write     = map IBCFix fs ++ ibc_write istate
+                                   , ibc_write     = map IBCFix fs ++ ibc_write istate
                                    })
                        fc <- getFC
                        return (PFix fc (fixityF precedence) ops)
@@ -181,7 +186,7 @@ checkNameFixity n = do fOk <- fixityOk n
       | 'prefix'
       ;
 @
- -}
+-}
 fixityType :: IdrisParser (Int -> Fixity)
 fixityType = do reserved "infixl"; return Infixl
          <|> do reserved "infixr"; return Infixr
