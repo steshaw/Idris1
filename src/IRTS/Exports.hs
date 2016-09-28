@@ -11,7 +11,8 @@ Maintainer  : The Idris Community.
 
 module IRTS.Exports(findExports, getExpNames) where
 
-import Idris.AbsSyntax
+import Idris.AbsSyntax (getIState, getExports, logCodeGen)
+import Idris.AbsSyntaxTree (Idris, IState (tt_ctxt))
 import Idris.Core.TT hiding (str)
 import Idris.Core.CaseTree
 import Idris.Core.Evaluate
