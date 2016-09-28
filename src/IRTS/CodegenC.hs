@@ -5,6 +5,7 @@ Copyright   :
 License     : BSD3
 Maintainer  : The Idris Community.
 -}
+
 module IRTS.CodegenC (codegenC) where
 
 import IRTS.Bytecode
