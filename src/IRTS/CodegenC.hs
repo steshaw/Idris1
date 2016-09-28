@@ -7,11 +7,9 @@ Maintainer  : The Idris Community.
 -}
 module IRTS.CodegenC (codegenC) where
 
-import Idris.AbsSyntax
 import IRTS.Bytecode
 import IRTS.Lang
 import IRTS.Simplified
-import IRTS.Defunctionalise
 import IRTS.System
 import IRTS.CodegenCommon
 import Idris.Core.TT
@@ -24,11 +22,9 @@ import Data.List (intercalate, nubBy)
 import System.Process
 import System.Exit
 import System.IO
-import System.Directory
 import System.FilePath ((</>), (<.>))
 import Control.Monad
 
-import Debug.Trace
 
 codegenC :: CodeGenerator
 codegenC ci = do codegenC' (simpleDecls ci)
