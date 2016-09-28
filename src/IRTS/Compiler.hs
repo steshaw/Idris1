@@ -43,7 +43,7 @@ import IRTS.Simplified
 import IRTS.CodegenCommon
 import IRTS.CodegenC
 import IRTS.DumpBC
-import IRTS.Inliner hiding (inl)
+import IRTS.Inliner hiding ( inl )
 import IRTS.Exports
 import IRTS.Portable
 
