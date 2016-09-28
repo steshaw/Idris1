@@ -5,8 +5,10 @@ Copyright   :
 License     : BSD3
 Maintainer  : The Idris Community.
 -}
+
 {-# LANGUAGE PatternGuards #-}
 {-# LANGUAGE OverloadedStrings #-}
+
 module IRTS.CodegenJavaScript (codegenJavaScript
                              , codegenNode
                              , JSTarget(..)
@@ -14,12 +16,10 @@ module IRTS.CodegenJavaScript (codegenJavaScript
 
 import IRTS.JavaScript.AST
 
-import Idris.AbsSyntax hiding (TypeCase)
 import IRTS.Bytecode
 import IRTS.Lang
 import IRTS.Exports
 import IRTS.Simplified
-import IRTS.Defunctionalise
 import IRTS.CodegenCommon
 import Idris.Core.TT
 import IRTS.System
@@ -32,17 +32,12 @@ import Control.Monad.RWS hiding (mapM)
 import Control.Monad.State
 import Data.Char
 import Numeric
-import Data.List
-import Data.Maybe
-import Data.Word
-import Data.Traversable hiding (mapM)
-import System.IO
+-- import Data.Word
 import System.Directory
 import System.FilePath
 
 import qualified Data.Map.Strict as M
 import qualified Data.Text as T
-import qualified Data.Text.IO as TIO
 
 
 data CompileInfo = CompileInfo { compileInfoApplyCases  :: [Int]

@@ -5,11 +5,14 @@ Copyright   :
 License     : BSD3
 Maintainer  : The Idris Community.
 -}
+
+{-# OPTIONS_GHC -Wall #-}
 {-# LANGUAGE PatternGuards #-}
+
 module IRTS.Exports(findExports, getExpNames) where
 
 import Idris.AbsSyntax
-import Idris.Core.TT
+import Idris.Core.TT hiding (str)
 import Idris.Core.CaseTree
 import Idris.Core.Evaluate
 import Idris.Error
@@ -37,6 +40,7 @@ toIFace n = do i <- getIState
                def <- case lookupDefExact n ctxt of
                            Just (CaseOp _ _ _ _ _ cs)
                               -> getExpList (snd (cases_compiletime cs))
+                           Just _ -> error "Unexpected case [toIFace]"
                            Nothing -> ifail "Can't happen [toIFace]"
                case lookupTyExact n ctxt of
                     Just ty -> toIFaceTyVal ty def
@@ -47,9 +51,10 @@ toIFace n = do i <- getIState
 
 toIFaceTyVal :: Type -> Term -> Idris ExportIFace
 toIFaceTyVal ty tm
-   | (P _ exp _, [P _ ffi _, Constant (Str hdr), _]) <- unApply ty
+   | (P _ _ _, [P _ ffi _, Constant (Str hdr), _]) <- unApply ty
          = do tm' <- toIFaceVal tm
               return $ Export ffi hdr tm'
+toIFaceTyVal _ _ = error "Unexpected case [toIFaceTyVal]"
 
 toIFaceVal :: Term -> Idris [Export]
 toIFaceVal tm
@@ -104,11 +109,13 @@ toFDescArgs tm
        = toFDescBase b : toFDescArgs t
    | otherwise = []
 
+toFDescPrim :: Term -> FDesc
 toFDescPrim (Constant (Str str)) = FStr str
 toFDescPrim tm
    | (P _ n _, []) <- unApply tm = FCon (deNS n)
    | (P _ n _, as) <- unApply tm = FApp (deNS n) (map toFDescPrim as)
 toFDescPrim _ = FUnknown
 
+deNS :: Name -> Name
 deNS (NS n _) = n
 deNS n = n
