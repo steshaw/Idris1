@@ -18,8 +18,12 @@ allows casing on arbitrary terms, here we choose to maintain the distinction
 in order to allow for better optimisation opportunities.
 
 -}
-{-# LANGUAGE PatternGuards, DeriveFunctor, TypeSynonymInstances,
-    DeriveGeneric #-}
+
+{-# LANGUAGE DeriveFunctor #-}
+{-# LANGUAGE DeriveGeneric #-}
+{-# LANGUAGE NoImplicitPrelude #-}
+{-# LANGUAGE PatternGuards #-}
+{-# LANGUAGE TypeSynonymInstances #-}
 
 module Idris.Core.CaseTree (
     CaseDef(..), SC, SC'(..), CaseAlt, CaseAlt'(..), ErasureInfo
@@ -28,15 +32,15 @@ module Idris.Core.CaseTree (
   , substSC, substAlt, mkForce
   ) where
 
+import Idris.Prelude
+
 import Idris.Core.TT
 
 import Control.Applicative hiding (Const)
 import Control.Monad.State
 import Control.Monad.Reader
-import Data.Maybe
 import Data.List hiding (partition)
-import qualified Data.List(partition)
-import Debug.Trace
+import qualified Data.List as List (partition)
 import GHC.Generics (Generic)
 
 data CaseDef = CaseDef [Name] !SC [Term]
@@ -436,7 +440,7 @@ order :: Phase -> [(Name, Bool)] -> [Clause] -> [Bool] -> ([Name], [Clause])
 -- order CompileTime ns cs _ = (map fst ns, cs) 
 order _ []  cs cans = ([], cs)
 order _ ns' [] cans = (map fst ns', [])
-order phase ns' cs cans 
+order phase ns' cs cans
     = let patnames = transpose (map (zip ns') (map (zip cans) (map fst cs)))
           -- only sort the arguments where there is no clash in
           -- constructor tags between families, the argument type is canonical,
@@ -444,7 +448,7 @@ order phase ns' cs cans
           -- clash, because otherwise we can't reliable make the
           -- case distinction on evaluation
           (patnames_ord, patnames_rest)
-                = Data.List.partition (noClash . map snd) patnames 
+                = List.partition (noClash . map snd) patnames
           patnames_ord' = case phase of
                                CompileTime -> patnames_ord
                                -- reversing tends to make better case trees
