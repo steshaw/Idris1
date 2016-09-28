@@ -6,16 +6,18 @@ License     : BSD3
 Maintainer  : The Idris Community.
 -}
 
-{-# LANGUAGE PatternGuards #-}
+{-# LANGUAGE NoImplicitPrelude #-}
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE PatternGuards #-}
 
 module IRTS.CodegenJavaScript (codegenJavaScript
                              , codegenNode
                              , JSTarget(..)
                              ) where
 
-import IRTS.JavaScript.AST
+import Idris.Prelude
 
+import IRTS.JavaScript.AST
 import IRTS.Bytecode
 import IRTS.Lang
 import IRTS.Exports
@@ -31,8 +33,8 @@ import Control.Applicative ((<$>), (<*>), pure)
 import Control.Monad.RWS hiding (mapM)
 import Control.Monad.State
 import Data.Char
+import Data.Traversable (traverse)
 import Numeric
--- import Data.Word
 import System.Directory
 import System.FilePath
 
